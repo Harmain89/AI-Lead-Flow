@@ -19,7 +19,7 @@ These are the credentials **already configured** in your n8n — the architectur
 | Capability | Credential (type) | Role in this project |
 |---|---|---|
 | AI / LLM | **OpenAI account** (`openAiApi`) | Understanding, extraction, qualification, message generation, escalation detection |
-| Database | **Supabase account** (`supabaseApi`) | Primary persistent store (Postgres): leads, conversations, appointments, events |
+| Database | **SQLite** (local, owned by the Next.js app) | Primary store for now: leads, conversations, appointments, events. **Portable migrations (Drizzle ORM)** so we can switch to Postgres/MySQL later with no workflow changes. Supabase (`supabaseApi`) stays available but **parked** for now. |
 | Email | **Gmail account** (`gmailOAuth2`) | Send AI replies + follow-ups to leads; escalation emails to admin |
 | Internal alerts | **Discord Webhook** (`discordWebhookApi`) | Real-time "hot lead" + "human required" notifications to the team |
 | Spreadsheet | **Google Sheets** (`googleSheetsOAuth2Api`) | Optional lightweight demo/CRM view of leads |
@@ -124,7 +124,7 @@ We are **not** rebuilding the enterprise Upwork scope. We are building a **focus
 | F13 | Internal Discord "hot lead" alert | n8n | 🔶 Phase 2 |
 | F14 | Google Sheets CRM mirror (demo view) | n8n | 🟢 Optional |
 | F15 | WhatsApp channel | n8n | 🟢 Future |
-| F16 | Simple lead-form frontend (static HTML) | Frontend | 🟢 Optional (great for demo) |
+| F16 | Lead-form frontend (Next.js app) | Frontend | 🟢 Optional (great for demo) |
 
 ---
 
@@ -195,10 +195,9 @@ Driven by **WF6 scheduler** (state + timestamps), not long in-workflow waits.
 - Invent facts (property listings/prices) — it works only from the lead's message + provided context.
 
 **Model & call settings:**
-- Model: a current OpenAI model (e.g. `gpt-4o` / `gpt-4o-mini` for cost) — extraction can use the cheaper model; reply generation the stronger one.
-- **JSON / structured output mode** for all decisions → reliable parsing.
-- `temperature`: low (`0–0.3`) for extraction/scoring; moderate (`0.5–0.7`) for message drafting.
-- Every AI decision passes through an n8n **JSON validation** gate.
+- **Model: `gpt-5-mini` ONLY** — used for every OpenAI call (extraction, scoring, reply drafting, follow-up, escalation detection). No other model in this project.
+- **JSON / structured output mode** for all decision calls → reliable parsing.
+- Every AI decision passes through an n8n **JSON validation** gate before n8n acts on it.
 
 **Target extraction schema (WF2 output):**
 ```json
@@ -222,9 +221,19 @@ Driven by **WF6 scheduler** (state + timestamps), not long in-workflow waits.
 
 ---
 
-## 6. Database / Storage Design (Supabase / Postgres)
+## 6. Database / Storage Design (SQLite now → portable to any SQL DB)
 
-Four tables. Keep it clean, not enterprise.
+**Decision:** use **SQLite** for now, owned by the **Next.js app**. The schema is defined once
+with **Drizzle ORM** and shipped as **versioned migration files**, so switching to Postgres/MySQL
+later is a config + regenerate step — **no workflow changes**.
+
+**Access pattern (important):** n8n is a cloud instance and cannot touch a local SQLite file
+directly. So the **Next.js app exposes thin API routes** (`/api/leads`, `/api/conversations`,
+`/api/events`, `/api/appointments`) and **n8n reads/writes via the HTTP Request node**. The DB
+engine stays hidden behind that API — this is exactly what makes the DB swappable later.
+
+Four tables. Keep it clean, not enterprise. The column types below are conceptual; Drizzle maps
+them per dialect (e.g. in SQLite: `uuid`→text, `jsonb`→text/JSON, `timestamptz`→ISO text/epoch).
 
 ### `leads`
 | column | type | notes |
@@ -262,7 +271,13 @@ Four tables. Keep it clean, not enterprise.
 ### `workflow_events`  *(audit log)*
 | id (uuid) | lead_id (fk) | workflow | action | status (`ok`/`error`) | detail (jsonb) | error (text) | timestamp |
 
-> **Lightweight alternative:** if we want zero external setup for a quick demo, the same four tables map cleanly to **n8n Data Tables** or **Google Sheets tabs**. Recommendation: **Supabase** (it's already configured and it looks the most professional in a portfolio).
+**Portability plan (migrations):**
+- Schema lives in `frontend/db/schema.ts` (Drizzle) → single source of truth.
+- Migrations generated with `drizzle-kit` into `frontend/db/migrations/` (timestamped SQL files, version-controlled).
+- Dialect is set in `frontend/drizzle.config.ts`. Switching DB = change the driver + dialect and re-generate; API routes and n8n stay identical.
+- Avoid SQLite-only SQL in app code — go through Drizzle's query builder so the same code runs on Postgres/MySQL.
+
+> **Future switch (SQLite → Postgres/Supabase):** swap the driver (`better-sqlite3` → `postgres`), point `DATABASE_URL` at the new DB, re-run migrations. Because n8n talks only to the Next.js API, **zero n8n workflows change.**
 
 ---
 
@@ -290,13 +305,13 @@ NEW ──▶ CONTACTED ──▶ QUALIFYING ──▶ QUALIFIED ──▶ APPOI
 | Integration | Status | Used for |
 |---|---|---|
 | OpenAI API | ✅ configured | AI qualification + generation |
-| Supabase | ✅ configured | Database |
+| SQLite (via Next.js API) | 🟢 to build | Database — Drizzle ORM + portable migrations; n8n reads/writes via HTTP Request |
 | Gmail | ✅ configured | Lead emails + escalation emails |
 | Discord Webhook | ✅ configured | Internal team alerts |
 | n8n Webhook | ✅ built-in | Lead intake + reply endpoint |
 | Google Sheets | ✅ configured | Optional CRM mirror |
 | **Google Calendar** | ⛔ **to add** | Appointment booking (Phase 2) |
-| Static lead form (HTML) | 🟢 to build | Demo frontend that POSTs to the webhook |
+| **Next.js lead form** | 🟢 to build | Proper Next.js app (form + landing page) that POSTs to the intake webhook |
 
 ---
 
@@ -312,10 +327,18 @@ AI Lead Flow/
 │   ├── api/                            ← webhook request/response contracts
 │   └── diagrams/                       ← architecture + state-machine images
 ├── workflows/                          ← exported n8n workflow JSON (WF1–WF6)
-├── db/
-│   └── schema.sql                      ← Supabase table definitions
-├── frontend/
-│   └── lead-form.html                  ← simple demo lead form
+├── frontend/                           ← Next.js app (lead form + landing page + DB layer)
+│   ├── app/
+│   │   ├── (site)/                     ← lead form / landing pages
+│   │   └── api/                        ← DB API routes n8n calls (leads, conversations, events, appointments)
+│   ├── components/                     ← form UI, result view
+│   ├── lib/                            ← webhook client + data-access helpers (Drizzle queries)
+│   ├── db/
+│   │   ├── schema.ts                   ← Drizzle schema (single source of truth)
+│   │   ├── migrations/                 ← generated, versioned SQL migrations (portable)
+│   │   └── index.ts                    ← db client (SQLite driver now; swappable later)
+│   ├── drizzle.config.ts               ← dialect + migration config
+│   └── data.sqlite                     ← local SQLite file (gitignored)
 ├── tests/
 │   └── sample-payloads/                ← example leads (hot / warm / nurture / escalation)
 └── README.md                           ← portfolio landing page (story + screenshots + GIF)
