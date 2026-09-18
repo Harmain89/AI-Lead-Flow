@@ -15,6 +15,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "AI Lead Flow | Autonomous Sales & Lead Qualification Engine",
   description: "AI-Powered Real Estate Lead Qualification, Scoring, and Follow-up Pipeline Engine powered by n8n and OpenAI.",
+  icons: {
+    icon: "/favicon.png",
+    apple: "/favicon.png",
+  },
 };
 
 export default function RootLayout({

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import Logo from "@/components/Logo";
 
 interface LeadRecord {
   id: string;
@@ -117,6 +118,18 @@ export default function N8nTemplatePage() {
 
   // Canvas zoom/expand modal
   const [isCanvasExpanded, setIsCanvasExpanded] = useState(false);
+
+  // Production Proof Showcase states
+  const [visualizerTab, setVisualizerTab] = useState<"canvas" | "proofs">("canvas");
+  const [step3SubTab, setStep3SubTab] = useState<"gmail" | "discord" | "diagram">("gmail");
+  const [simulatorOutputTab, setSimulatorOutputTab] = useState<"response" | "gmail_proof" | "discord_proof">("response");
+  const [proofModal, setProofModal] = useState<{
+    src: string;
+    title: string;
+    badge: string;
+    badgeColor: string;
+    desc: string;
+  } | null>(null);
 
   // CRM Leads State
   const [leadsList, setLeadsList] = useState<LeadRecord[]>([]);
@@ -238,21 +251,7 @@ export default function N8nTemplatePage() {
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {/* n8n Style Logo Node */}
-            <div className="w-8 h-8 rounded-lg bg-[#ff6d5a] flex items-center justify-center text-white font-bold text-sm shadow-sm">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="6" cy="6" r="3" />
-                <circle cx="6" cy="18" r="3" />
-                <path d="M20 4L8.12 15.88" />
-                <circle cx="18" cy="9" r="3" />
-                <circle cx="18" cy="15" r="3" />
-              </svg>
-            </div>
-            <div>
-              <span className="font-extrabold text-slate-950 text-base tracking-tight">n8n</span>
-              <span className="text-slate-400 mx-2">/</span>
-              <span className="text-xs font-semibold text-slate-600">Workflow Templates</span>
-            </div>
+            <Logo size="md" href="/" />
           </div>
 
           <nav className="hidden md:flex items-center gap-6 text-xs font-semibold text-slate-600">
@@ -330,22 +329,51 @@ export default function N8nTemplatePage() {
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-400">
                 <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span>AI Lead Flow (ID: Eh7s0XF0NSJEIECN)</span>
+                <span className="hidden sm:inline">AI Lead Flow (ID: Eh7s0XF0NSJEIECN)</span>
               </div>
               <span className="hidden sm:inline text-slate-600">|</span>
-              <span className="hidden sm:inline text-[11px] bg-emerald-950/80 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-                Active Production
-              </span>
+              {/* Visualizer Mode Toggle */}
+              <div className="flex items-center gap-1 bg-slate-900/90 p-1 rounded-lg border border-slate-700/60">
+                <button
+                  type="button"
+                  onClick={() => setVisualizerTab("canvas")}
+                  className={`px-2.5 py-0.5 rounded text-[11px] font-semibold transition-all ${
+                    visualizerTab === "canvas"
+                      ? "bg-[#ff6d5a] text-white shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  🗺️ Workflow Canvas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisualizerTab("proofs")}
+                  className={`px-2.5 py-0.5 rounded text-[11px] font-semibold transition-all flex items-center gap-1.5 ${
+                    visualizerTab === "proofs"
+                      ? "bg-[#ff6d5a] text-white shadow-sm"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  <span>⚡ Live Outputs Proof</span>
+                </button>
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setIsCanvasExpanded(true)}
-                className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all text-xs font-semibold flex items-center gap-1.5"
-              >
-                <span>🔍 Zoom Full Canvas</span>
-              </button>
+              {visualizerTab === "canvas" ? (
+                <button
+                  type="button"
+                  onClick={() => setIsCanvasExpanded(true)}
+                  className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all text-xs font-semibold flex items-center gap-1.5"
+                >
+                  <span>🔍 Zoom Canvas</span>
+                </button>
+              ) : (
+                <span className="text-[11px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded">
+                  Dual-Channel Verified
+                </span>
+              )}
               <a
                 href="#simulator"
                 className="px-3 py-1 rounded-lg bg-[#ff6d5a] hover:bg-[#e65b49] text-white font-bold text-xs transition-all"
@@ -355,15 +383,87 @@ export default function N8nTemplatePage() {
             </div>
           </div>
 
-          {/* Workflow Canvas Image View */}
-          <div className="relative p-2 sm:p-4 bg-[#121316] flex items-center justify-center min-h-[380px] sm:min-h-[480px]">
-            <img
-              src="/n8n-workflow-canvas.png"
-              alt="n8n AI Lead Flow Workflow Canvas"
-              className="w-full h-auto max-h-[500px] object-contain cursor-zoom-in rounded-lg"
-              onClick={() => setIsCanvasExpanded(true)}
-            />
-          </div>
+          {/* Workflow Canvas / Production Proof View */}
+          {visualizerTab === "canvas" ? (
+            <div className="relative p-2 sm:p-4 bg-[#121316] flex items-center justify-center min-h-[380px] sm:min-h-[480px]">
+              <img
+                src="/n8n-workflow-canvas.png"
+                alt="n8n AI Lead Flow Workflow Canvas"
+                className="w-full h-auto max-h-[500px] object-contain cursor-zoom-in rounded-lg"
+                onClick={() => setIsCanvasExpanded(true)}
+              />
+            </div>
+          ) : (
+            <div className="p-4 sm:p-6 bg-[#121316] min-h-[380px] sm:min-h-[480px] flex flex-col justify-center">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-6xl mx-auto w-full">
+                {/* Gmail Proof Window */}
+                <div
+                  className="bg-[#1e2025] rounded-xl border border-slate-700/80 p-3 sm:p-4 space-y-2.5 cursor-zoom-in hover:border-slate-600 transition-all group"
+                  onClick={() => setProofModal({
+                    src: "/live-customer-email-proof.png",
+                    title: "Live Customer Email Delivery (Gmail)",
+                    badge: "Customer Outreach",
+                    badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
+                    desc: "Automated high-converting email response dispatched directly to prospective client John Carterxx via Gmail within 2.1 seconds."
+                  })}
+                >
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+                      <span className="font-bold text-white">✉️ Gmail Customer Delivery</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/40 px-2 py-0.5 rounded">
+                      Delivered in 2.1s
+                    </span>
+                  </div>
+                  <div className="rounded-lg overflow-hidden border border-slate-700 bg-white">
+                    <img
+                      src="/live-customer-email-proof.png"
+                      alt="Gmail Inbox Proof"
+                      className="w-full h-[220px] object-cover object-top"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                    <span>Personalized 3-Bed Dubai Marina Consultation</span>
+                    <span className="text-[#ff6d5a] group-hover:underline">🔍 Expand full</span>
+                  </div>
+                </div>
+
+                {/* Discord Proof Window */}
+                <div
+                  className="bg-[#1e2025] rounded-xl border border-slate-700/80 p-3 sm:p-4 space-y-2.5 cursor-zoom-in hover:border-slate-600 transition-all group"
+                  onClick={() => setProofModal({
+                    src: "/live-discord-alert-proof.png",
+                    title: "Live Discord Sales Channel Alert",
+                    badge: "Team Notification",
+                    badgeColor: "bg-indigo-50 text-indigo-700 border-indigo-200",
+                    desc: "Real-time webhook notification broadcast to #lead_generation channel with full client dossier and 95/100 score."
+                  })}
+                >
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-indigo-400" />
+                      <span className="font-bold text-white">💬 Discord Staff Notification</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-indigo-400 bg-indigo-950/60 border border-indigo-500/40 px-2 py-0.5 rounded">
+                      Score: 95/100 HOT
+                    </span>
+                  </div>
+                  <div className="rounded-lg overflow-hidden border border-slate-700 bg-[#313338]">
+                    <img
+                      src="/live-discord-alert-proof.png"
+                      alt="Discord Alert Proof"
+                      className="w-full h-[220px] object-cover object-top"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                    <span>Instant #lead_generation Broadcast with Phone & Budget</span>
+                    <span className="text-[#ff6d5a] group-hover:underline">🔍 Expand full</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Canvas Footer Bar */}
           <div className="bg-[#18191d] border-t border-slate-800 p-3 px-4 flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-slate-400 gap-2">
@@ -514,20 +614,117 @@ export default function N8nTemplatePage() {
                     <div>
                       <div className="flex items-center justify-between text-xs font-semibold text-slate-400 mb-1">
                         <span>PHASE 03 OF 04</span>
-                        <span className="font-mono text-indigo-600">Integrations: Gmail + Discord</span>
+                        <span className="font-mono text-indigo-600">Integrations: Gmail OAuth2 + Discord Webhook</span>
                       </div>
-                      <h3 className="text-lg font-bold text-slate-950">Omni-Channel Action & Instant Reply</h3>
+                      <h3 className="text-lg font-bold text-slate-950">Omni-Channel Action & Instant Dual Reply</h3>
                       <p className="text-xs sm:text-sm text-slate-600 mt-1.5 leading-relaxed">
-                        n8n executes conditional IF nodes on the calculated score. For Hot Leads (80+), it dispatches the customized consultation email via <strong>Gmail</strong> directly to the buyer, and sends a rich formatted alert to the sales team on <strong>Discord</strong> with phone number, budget, and inquiry notes. Warm and Nurture leads receive appropriate guidance and long-term drip follow-ups.
+                        n8n executes conditional IF nodes on the calculated score. For Hot Leads (80+), it dispatches the customized consultation email via <strong>Gmail</strong> directly to the buyer, and broadcasts an actionable intelligence dossier to the sales team on <strong>Discord</strong>. Warm and Nurture leads receive appropriate guidance and long-term drip follow-ups.
                       </p>
                     </div>
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center justify-center">
-                      <img
-                        src="/step3.jpg"
-                        alt="Step 3: Omni-Channel Action and Reply"
-                        className="w-full h-auto max-h-[300px] object-contain rounded-lg"
-                      />
+
+                    {/* Sub-tabs for Step 3 Real Proof */}
+                    <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+                      <button
+                        type="button"
+                        onClick={() => setStep3SubTab("gmail")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          step3SubTab === "gmail"
+                            ? "bg-slate-900 text-white shadow-sm"
+                            : "bg-slate-100 text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        ✉️ Real Customer Email (Gmail Proof)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStep3SubTab("discord")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          step3SubTab === "discord"
+                            ? "bg-slate-900 text-white shadow-sm"
+                            : "bg-slate-100 text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        💬 Real Sales Alert (Discord Proof)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setStep3SubTab("diagram")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          step3SubTab === "diagram"
+                            ? "bg-slate-900 text-white shadow-sm"
+                            : "bg-slate-100 text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        🎨 Flow Architecture
+                      </button>
                     </div>
+
+                    {/* Step 3 Sub-tab Content */}
+                    {step3SubTab === "gmail" && (
+                      <div className="space-y-3">
+                        <div
+                          className="bg-slate-50 border border-slate-200 rounded-xl p-3 sm:p-4 flex flex-col items-center group cursor-pointer"
+                          onClick={() => setProofModal({
+                            src: "/live-customer-email-proof.png",
+                            title: "Real Gmail Customer Inbox Delivery",
+                            badge: "Verified Delivery",
+                            badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
+                            desc: "Automated email sent via Gmail node directly to prospective buyer John Carterxx with tailored 3-bed Dubai Marina/Downtown recommendations."
+                          })}
+                        >
+                          <div className="w-full flex items-center justify-between text-xs text-slate-500 mb-2 px-1">
+                            <span className="font-semibold text-slate-800">Actual Customer Inbox (Gmail)</span>
+                            <span className="text-[11px] text-blue-600 group-hover:underline">🔍 Click to zoom</span>
+                          </div>
+                          <img
+                            src="/live-customer-email-proof.png"
+                            alt="Live Customer Email Proof"
+                            className="w-full h-auto max-h-[340px] object-contain rounded-lg shadow-sm border border-slate-200"
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          ✓ Real production delivery to buyer's inbox within 2.1s with dedicated consultant SLA (Harmain) and bespoke property matching.
+                        </p>
+                      </div>
+                    )}
+
+                    {step3SubTab === "discord" && (
+                      <div className="space-y-3">
+                        <div
+                          className="bg-slate-900 border border-slate-800 rounded-xl p-3 sm:p-4 flex flex-col items-center group cursor-pointer"
+                          onClick={() => setProofModal({
+                            src: "/live-discord-alert-proof.png",
+                            title: "Real Discord Sales Team Alert",
+                            badge: "Hot Lead 95/100",
+                            badgeColor: "bg-rose-500/20 text-rose-300 border-rose-500/30",
+                            desc: "Instant alert broadcast to the #lead_generation Discord channel with full client contact details, budget, timeline, and next action."
+                          })}
+                        >
+                          <div className="w-full flex items-center justify-between text-xs text-slate-400 mb-2 px-1">
+                            <span className="font-semibold text-slate-200">#lead_generation Channel Alert (Discord)</span>
+                            <span className="text-[11px] text-indigo-400 group-hover:underline">🔍 Click to zoom</span>
+                          </div>
+                          <img
+                            src="/live-discord-alert-proof.png"
+                            alt="Live Discord Alert Proof"
+                            className="w-full h-auto max-h-[340px] object-contain rounded-lg shadow-sm border border-slate-700"
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          ✓ Formatted with clickable client phone, buyer budget ($350k), inquiry text, and designated next action (offer_appointment).
+                        </p>
+                      </div>
+                    )}
+
+                    {step3SubTab === "diagram" && (
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center justify-center">
+                        <img
+                          src="/step3.jpg"
+                          alt="Step 3: Omni-Channel Action and Reply"
+                          className="w-full h-auto max-h-[300px] object-contain rounded-lg"
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -552,6 +749,142 @@ export default function N8nTemplatePage() {
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* ================= DEDICATED PRODUCTION OUTPUT PROOF SECTION ================= */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-widest text-[#ff6d5a]">
+                      Verified Production Telemetry
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      Live Execution Verified
+                    </span>
+                  </div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-slate-950 mt-1">
+                    Dual-Channel Automated Delivery in Action
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-600 mt-1">
+                    When John Carter inquired for a luxury 3-bedroom apartment, n8n scored the lead at <strong>95/100</strong> and dispatched both outputs simultaneously in under 4 seconds.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Gmail Proof Card */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3 flex flex-col justify-between hover:border-slate-300 transition-all group">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                        <span className="text-xs font-bold text-slate-900">1. Customer Gmail Delivery</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        Delivered in 2.1s
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mb-3">
+                      To: <code className="text-slate-700 font-mono">harmainrizwanr@gmail.com</code> · Subject: <span className="text-slate-800 font-medium">"Exclusive 3-Bedroom Luxury Apartments Await You, John!"</span>
+                    </p>
+
+                    {/* Image Mockup */}
+                    <div
+                      className="relative rounded-lg overflow-hidden border border-slate-200 shadow-sm cursor-zoom-in group-hover:shadow-md transition-all bg-white"
+                      onClick={() => setProofModal({
+                        src: "/live-customer-email-proof.png",
+                        title: "Live Customer Email Delivery (Gmail)",
+                        badge: "Customer Outreach",
+                        badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
+                        desc: "Personalized outbound consultation response sent automatically to John Carterxx with specific 3-bedroom Dubai Marina / Downtown matching and senior consultant appointment confirmation."
+                      })}
+                    >
+                      <img
+                        src="/live-customer-email-proof.png"
+                        alt="Customer Email Inbox Proof"
+                        className="w-full h-[220px] object-cover object-top"
+                      />
+                      <div className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/10 transition-colors flex items-center justify-center">
+                        <span className="opacity-0 group-hover:opacity-100 bg-white/95 text-slate-900 text-xs font-bold px-3 py-1.5 rounded-lg shadow-lg transition-opacity flex items-center gap-1.5">
+                          <span>🔍 Click to View Full Email</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-200/80 space-y-1.5 text-[11px] text-slate-600">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-emerald-500 font-bold">✓</span>
+                      <span><strong>Personalized:</strong> Directly greets John Carterxx & references exact $350k budget</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-emerald-500 font-bold">✓</span>
+                      <span><strong>Inventory Matching:</strong> Highlights prime inventory in Dubai Marina & Downtown</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-emerald-500 font-bold">✓</span>
+                      <span><strong>SLA Commitment:</strong> Consultant Harmain assigned to call within 2 business hours</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Discord Proof Card */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3 flex flex-col justify-between hover:border-slate-300 transition-all group">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
+                        <span className="text-xs font-bold text-slate-900">2. Sales Discord Channel Alert</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                        Score: 95/100 HOT
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mb-3">
+                      Channel: <code className="text-slate-700 font-mono">#lead_generation</code> · Bot: <span className="text-slate-800 font-medium">lead-generation-hook APP</span>
+                    </p>
+
+                    {/* Image Mockup */}
+                    <div
+                      className="relative rounded-lg overflow-hidden border border-slate-700 shadow-sm cursor-zoom-in group-hover:shadow-md transition-all bg-[#313338]"
+                      onClick={() => setProofModal({
+                        src: "/live-discord-alert-proof.png",
+                        title: "Live Discord Sales Team Alert",
+                        badge: "Staff Broadcast",
+                        badgeColor: "bg-indigo-50 text-indigo-700 border-indigo-200",
+                        desc: "Instant priority broadcast sent to Discord with direct phone number, full lead criteria, and immediate offer_appointment action plan."
+                      })}
+                    >
+                      <img
+                        src="/live-discord-alert-proof.png"
+                        alt="Discord Team Alert Proof"
+                        className="w-full h-[220px] object-cover object-top"
+                      />
+                      <div className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/20 transition-colors flex items-center justify-center">
+                        <span className="opacity-0 group-hover:opacity-100 bg-white/95 text-slate-900 text-xs font-bold px-3 py-1.5 rounded-lg shadow-lg transition-opacity flex items-center gap-1.5">
+                          <span>🔍 Click to View Full Alert</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-200/80 space-y-1.5 text-[11px] text-slate-600">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-indigo-500 font-bold">✓</span>
+                      <span><strong>Lead Scoring:</strong> Evaluated at 95/100 by OpenAI GPT-4o deterministic rubric</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-indigo-500 font-bold">✓</span>
+                      <span><strong>One-Tap Contact:</strong> Pre-formatted phone (+971501234567) & email for 1-click calling</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-indigo-500 font-bold">✓</span>
+                      <span><strong>Next Action:</strong> Prescribed <code className="text-slate-800 font-mono">offer_appointment</code> for site viewing</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -726,13 +1059,110 @@ export default function N8nTemplatePage() {
                     </div>
                   </div>
 
-                  {/* Generated Email Reply */}
-                  <div className="space-y-1">
-                    <span className="text-[11px] font-bold text-slate-700">Outbound Email Reply Generated by GPT-4o:</span>
-                    <div className="text-xs text-slate-800 leading-relaxed bg-white p-3.5 rounded-lg border border-slate-200 whitespace-pre-wrap font-sans">
-                      {simulationResult.personalized_reply}
-                    </div>
+                  {/* Simulator View Switcher Tabs */}
+                  <div className="flex items-center gap-1.5 border-b border-slate-200 pb-2">
+                    <button
+                      type="button"
+                      onClick={() => setSimulatorOutputTab("response")}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                        simulatorOutputTab === "response"
+                          ? "bg-slate-900 text-white shadow-sm"
+                          : "bg-white text-slate-600 hover:text-slate-900 border border-slate-200"
+                      }`}
+                    >
+                      ✨ AI Email Generated
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSimulatorOutputTab("gmail_proof")}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                        simulatorOutputTab === "gmail_proof"
+                          ? "bg-slate-900 text-white shadow-sm"
+                          : "bg-white text-slate-600 hover:text-slate-900 border border-slate-200"
+                      }`}
+                    >
+                      <span>✉️ Real Gmail Proof</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSimulatorOutputTab("discord_proof")}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                        simulatorOutputTab === "discord_proof"
+                          ? "bg-slate-900 text-white shadow-sm"
+                          : "bg-white text-slate-600 hover:text-slate-900 border border-slate-200"
+                      }`}
+                    >
+                      <span>💬 Real Discord Proof</span>
+                    </button>
                   </div>
+
+                  {/* Tab 1: Generated Email Reply */}
+                  {simulatorOutputTab === "response" && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[11px] text-slate-600">
+                        <span className="font-bold">Outbound Customer Reply Generated by GPT-4o:</span>
+                        <span className="font-mono text-slate-400">Subject: {simulationResult.reply_subject || "Inquiry Response"}</span>
+                      </div>
+                      <div
+                        className="text-xs text-slate-800 leading-relaxed bg-white p-3.5 rounded-lg border border-slate-200 font-sans"
+                        dangerouslySetInnerHTML={{
+                          __html: simulationResult.personalized_reply || "<p>No reply content available.</p>"
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Tab 2: Gmail Proof */}
+                  {simulatorOutputTab === "gmail_proof" && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs text-slate-500">
+                        <span>Actual Customer Inbox Delivery (Gmail):</span>
+                        <span className="text-[11px] text-emerald-600 font-semibold">✓ Verified Live Output</span>
+                      </div>
+                      <div
+                        className="bg-white p-2 rounded-lg border border-slate-200 cursor-zoom-in"
+                        onClick={() => setProofModal({
+                          src: "/live-customer-email-proof.png",
+                          title: "Live Customer Email Delivery (Gmail)",
+                          badge: "Customer Outreach",
+                          badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
+                          desc: "Personalized outbound consultation response sent automatically to John Carterxx with 3-bed Dubai Marina/Downtown recommendations and consultant assignment."
+                        })}
+                      >
+                        <img
+                          src="/live-customer-email-proof.png"
+                          alt="Gmail Proof"
+                          className="w-full h-auto max-h-[300px] object-contain rounded"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Tab 3: Discord Proof */}
+                  {simulatorOutputTab === "discord_proof" && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs text-slate-500">
+                        <span>Actual Discord Broadcast to Sales Channel:</span>
+                        <span className="text-[11px] text-indigo-600 font-semibold">✓ Verified Live Output</span>
+                      </div>
+                      <div
+                        className="bg-[#313338] p-2 rounded-lg border border-slate-700 cursor-zoom-in"
+                        onClick={() => setProofModal({
+                          src: "/live-discord-alert-proof.png",
+                          title: "Live Discord Sales Team Alert",
+                          badge: "Staff Broadcast",
+                          badgeColor: "bg-indigo-50 text-indigo-700 border-indigo-200",
+                          desc: "Instant priority broadcast sent to Discord with direct phone number, full lead criteria, and immediate offer_appointment action plan."
+                        })}
+                      >
+                        <img
+                          src="/live-discord-alert-proof.png"
+                          alt="Discord Proof"
+                          className="w-full h-auto max-h-[300px] object-contain rounded"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1081,13 +1511,55 @@ export default function N8nTemplatePage() {
         </div>
       )}
 
+      {/* Proof Lightbox Modal */}
+      {proofModal && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-150"
+          onClick={() => setProofModal(null)}
+        >
+          <div
+            className="relative max-w-5xl w-full bg-white rounded-2xl border border-slate-200 shadow-2xl p-5 sm:p-6 overflow-hidden space-y-4 max-h-[92vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${proofModal.badgeColor}`}>
+                  {proofModal.badge}
+                </span>
+                <h3 className="text-sm sm:text-base font-bold text-slate-950">
+                  {proofModal.title}
+                </h3>
+              </div>
+              <button
+                onClick={() => setProofModal(null)}
+                className="p-1.5 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all font-bold text-xs cursor-pointer"
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            <div className="bg-slate-900/5 border border-slate-200 rounded-xl p-2 overflow-auto flex items-center justify-center flex-1">
+              <img
+                src={proofModal.src}
+                alt={proofModal.title}
+                className="w-full h-auto max-h-[65vh] object-contain rounded-lg shadow-sm"
+              />
+            </div>
+
+            <div className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-200 shrink-0">
+              <strong>Verified Telemetry:</strong> {proofModal.desc}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white py-8 text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-800">AI Lead Flow</span>
-            <span>·</span>
-            <span>n8n Workflow Template & Live Autonomous Pipeline</span>
+          <div className="flex items-center gap-3">
+            <Logo size="sm" showBadge={false} href="/" />
+            <span className="text-slate-300">|</span>
+            <span className="text-slate-500">Official n8n Community Template #15910</span>
           </div>
 
           <div className="flex items-center gap-6">
