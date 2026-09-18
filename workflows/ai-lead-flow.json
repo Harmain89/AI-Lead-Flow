@@ -1,0 +1,1261 @@
+{
+  "id": "Eh7s0XF0NSJEIECN",
+  "name": "AI Lead Flow",
+  "active": true,
+  "isArchived": false,
+  "versionId": "0f650167-1629-4db6-bf57-d488a45ac491",
+  "activeVersionId": "0f650167-1629-4db6-bf57-d488a45ac491",
+  "triggerCount": 1,
+  "createdAt": "2026-08-24T05:26:35.661Z",
+  "updatedAt": "2026-09-18T06:44:07.837Z",
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "connections": {
+    "Lead Intake Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate & Normalize Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Normalize Lead": {
+      "main": [
+        [
+          {
+            "node": "Is Valid Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid Lead?": {
+      "main": [
+        [
+          {
+            "node": "Build AI Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400 Bad Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Prompt": {
+      "main": [
+        [
+          {
+            "node": "OpenAI: Lead Qualification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI: Lead Qualification": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Decision": {
+      "main": [
+        [
+          {
+            "node": "Is Human Escalation?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Human Escalation?": {
+      "main": [
+        [
+          {
+            "node": "Send Discord Escalation Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Hot Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Discord Escalation Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Admin Escalation Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Admin Escalation Email": {
+      "main": [
+        [
+          {
+            "node": "Format Final Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Hot Lead?": {
+      "main": [
+        [
+          {
+            "node": "Send Hot Lead Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Warm Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Hot Lead Email": {
+      "main": [
+        [
+          {
+            "node": "Send Hot Lead Discord Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Hot Lead Discord Alert": {
+      "main": [
+        [
+          {
+            "node": "Format Final Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Warm Lead?": {
+      "main": [
+        [
+          {
+            "node": "Send Warm Lead Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Nurture Lead Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Warm Lead Email": {
+      "main": [
+        [
+          {
+            "node": "Format Final Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Nurture Lead Email": {
+      "main": [
+        [
+          {
+            "node": "Format Final Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Final Webhook Response": {
+      "main": [
+        [
+          {
+            "node": "Respond 200 Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "id": "lead-intake-webhook-01",
+      "name": "Lead Intake Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        200
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "options": {},
+        "path": "lead-intake",
+        "responseMode": "responseNode"
+      },
+      "webhookId": "8147bf4b-fefb-4f58-8430-63de3ed76299"
+    },
+    {
+      "id": "validate-normalize-01",
+      "name": "Validate & Normalize Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -950,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const body = $input.all()[0].json.body || $input.all()[0].json;\n\nconst name = String(body.name || '').trim();\nconst email = String(body.email || '').trim().toLowerCase();\nconst phone = String(body.phone || '').trim();\nconst message = String(body.message || '').trim();\nconst source = String(body.source || 'web_form').trim();\n\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nconst hasValidEmail = emailRegex.test(email);\nconst hasMessage = message.length > 0;\n\nif (!hasValidEmail || !hasMessage) {\n  return [{\n    json: {\n      isValid: false,\n      errorMessage: !hasValidEmail ? 'Valid email address is required.' : 'Inquiry message cannot be empty.',\n      rawInput: body\n    }\n  }];\n}\n\nconst leadId = 'lead_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);\nconst receivedAt = new Date().toISOString();\n\nreturn [{\n  json: {\n    isValid: true,\n    leadId: leadId,\n    name: name || 'Prospective Client',\n    email: email,\n    phone: phone || 'Not provided',\n    message: message,\n    source: source,\n    receivedAt: receivedAt\n  }\n}];"
+      }
+    },
+    {
+      "id": "is-valid-lead-01",
+      "name": "Is Valid Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        200
+      ],
+      "parameters": {
+        "combinator": "and",
+        "conditions": {
+          "conditions": [
+            {
+              "id": "valid-check-1",
+              "leftValue": "={{ $json.isValid }}",
+              "operator": {
+                "operation": "equals",
+                "type": "boolean"
+              },
+              "rightValue": true
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "respond-400-01",
+      "name": "Respond 400 Bad Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -700,
+        420
+      ],
+      "parameters": {
+        "options": {
+          "responseCode": 400
+        },
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": \"{{ $json.errorMessage }}\"\n}"
+      }
+    },
+    {
+      "id": "build-ai-prompt-01",
+      "name": "Build AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -450,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const lead = $input.all()[0].json;\n\nconst systemPrompt = `You are an expert AI Inbound Sales & Lead Qualification Agent for a premier Real Estate and Investment Agency in Dubai.\nYour task is to analyze the customer's inquiry, extract structured fields, assign a deterministic lead score (0-100), identify if immediate human escalation is required, and draft a high-converting, personalized email reply.\n\nSCORING RUBRIC (0-100):\n- 80-100 (HOT): Clear intent to buy/rent/invest, specific budget or location, urgency < 3 months, or asking for meeting/site visit/call.\n- 50-79 (WARM): Interested in properties but flexible budget, exploratory timeline (3-6 months), or asking general guidance questions.\n- 0-49 (NURTURE / LOW): Highly vague, unrealistic budget, spam, irrelevant inquiry, or distant future timeline (> 12 months).\n\nHUMAN ESCALATION (human_required = true):\n- Set true if the message mentions legal issues, contracts, payment/deposit problems, complaints, or explicitly demands to speak to a senior manager or human agent immediately.\n\nOUTPUT FORMAT:\nReturn ONLY a valid JSON object without markdown fences, code blocks, or preamble:\n{\n  \"intent\": \"buy | rent | invest | sell | info | complaint\",\n  \"property_type\": \"apartment | villa | penthouse | townhouse | commercial | any | null\",\n  \"location\": \"string or null\",\n  \"budget\": \"string or null\",\n  \"timeline\": \"string or null\",\n  \"urgency\": \"high | medium | low\",\n  \"lead_score\": 0 to 100,\n  \"qualification\": \"qualified | warm | nurture | needs_review\",\n  \"missing_information\": [\"array of missing fields\"],\n  \"next_action\": \"offer_appointment | ask_qualifying_question | send_nurture | escalate_to_human\",\n  \"human_required\": true or false,\n  \"human_reason\": \"string reason if human_required else null\",\n  \"reply_subject\": \"personalized email subject line\",\n  \"personalized_reply\": \"professional, warm, concise email reply text addressing the lead by name, acknowledging their specific requirement, and inviting next step (call/details)\"\n}`;\n\nconst userPrompt = `Lead Name: ${lead.name}\nLead Email: ${lead.email}\nLead Phone: ${lead.phone}\nSource: ${lead.source}\nInbound Message:\n\"${lead.message}\"`;\n\nreturn [{\n  json: {\n    ...lead,\n    systemPrompt: systemPrompt,\n    userPrompt: userPrompt\n  }\n}];"
+      }
+    },
+    {
+      "id": "openai-qualification-01",
+      "name": "OpenAI: Lead Qualification",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [
+        -200,
+        200
+      ],
+      "parameters": {
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $json.systemPrompt }}",
+              "role": "system"
+            },
+            {
+              "content": "={{ $json.userPrompt }}",
+              "role": "user"
+            }
+          ]
+        },
+        "modelId": {
+          "__rl": true,
+          "cachedResultName": "GPT-4O",
+          "mode": "list",
+          "value": "gpt-4o"
+        },
+        "options": {
+          "maxTokens": 800,
+          "temperature": 0.2
+        }
+      }
+    },
+    {
+      "id": "parse-ai-decision-01",
+      "name": "Parse AI Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        100,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const prev = $('Build AI Prompt').first().json;\nconst aiRaw = $input.all()[0].json.message?.content || $input.all()[0].json.choices?.[0]?.message?.content || '{}';\n\nlet parsed = {};\ntry {\n  const clean = String(aiRaw).replace(/```json\\s*/i, '').replace(/```\\s*/i, '').trim();\n  parsed = JSON.parse(clean);\n} catch (err) {\n  parsed = {\n    intent: 'info',\n    property_type: null,\n    location: null,\n    budget: null,\n    timeline: null,\n    urgency: 'medium',\n    lead_score: 50,\n    qualification: 'warm',\n    missing_information: ['failed to parse AI JSON'],\n    next_action: 'escalate_to_human',\n    human_required: true,\n    human_reason: 'AI output parse error: ' + err.message,\n    reply_subject: 'Thank you for your inquiry, ' + prev.name,\n    personalized_reply: 'Dear ' + prev.name + ',\\n\\nThank you for reaching out to us. A senior property specialist is currently reviewing your inquiry and will follow up with you shortly with curated options.\\n\\nBest regards,\\nAl-Harmain Premier Properties'\n  };\n}\n\nlet score = Number(parsed.lead_score);\nif (isNaN(score)) score = 50;\nif (score > 100) score = 100;\nif (score < 0) score = 0;\n\nlet qual = 'warm';\nif (score >= 80) qual = 'qualified';\nelse if (score >= 50) qual = 'warm';\nelse qual = 'nurture';\n\nconst isHuman = parsed.human_required === true;\nconst hReason = parsed.human_reason || (isHuman ? 'Flagged by AI qualification' : '');\n\nconst discordAlert = isHuman\n  ? `🚨 **HUMAN ESCALATION ALERT**\\n• **Name:** ${prev.name}\\n• **Email:** ${prev.email}\\n• **Phone:** ${prev.phone}\\n• **Reason:** ${hReason}\\n• **Customer Inquiry:** \"${prev.message}\"\\n• **Required Action:** Immediate senior agent / manager takeover.`\n  : `🔥 **NEW QUALIFIED LEAD (Score: ${score}/100)**\\n• **Client:** ${prev.name} (${prev.email})\\n• **Phone:** ${prev.phone}\\n• **Requirement:** ${parsed.property_type || 'Property'} in ${parsed.location || 'Dubai'}\\n• **Budget:** ${parsed.budget || 'Not specified'} · **Timeline:** ${parsed.timeline || 'Flexible'}\\n• **Customer Inquiry:** \"${prev.message}\"\\n• **Next Action:** ${parsed.next_action || 'Offer Appointment'}`;\n\nreturn [{\n  json: {\n    ...prev,\n    ...parsed,\n    lead_score: score,\n    qualification: qual,\n    human_required: isHuman,\n    human_reason: hReason,\n    discordAlert: discordAlert\n  }\n}];"
+      }
+    },
+    {
+      "id": "is-human-escalation-01",
+      "name": "Is Human Escalation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        350,
+        200
+      ],
+      "parameters": {
+        "combinator": "and",
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-human-01",
+              "leftValue": "={{ $json.human_required }}",
+              "operator": {
+                "operation": "equals",
+                "type": "boolean"
+              },
+              "rightValue": true
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "discord-escalation-01",
+      "name": "Send Discord Escalation Alert",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        600,
+        -50
+      ],
+      "parameters": {
+        "authentication": "webhook",
+        "content": "={{ $('Parse AI Decision').item.json.discordAlert }}",
+        "embeds": {
+          "values": []
+        },
+        "files": {
+          "values": []
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "54d17052-9bbf-4bdd-bfc9-dc8e6809f32b"
+    },
+    {
+      "id": "gmail-escalation-01",
+      "name": "Send Admin Escalation Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        850,
+        -50
+      ],
+      "parameters": {
+        "message": "=<h3>🚨 Urgent Lead Escalation</h3><p><strong>Customer Name:</strong> {{ $('Parse AI Decision').item.json.name }}<br><strong>Email:</strong> {{ $('Parse AI Decision').item.json.email }}<br><strong>Phone:</strong> {{ $('Parse AI Decision').item.json.phone }}</p><p><strong>Escalation Reason:</strong> {{ $('Parse AI Decision').item.json.human_reason }}</p><p><strong>Customer Inquiry:</strong><br><em>{{ $('Parse AI Decision').item.json.message }}</em></p><p><strong>AI Lead Score:</strong> {{ $('Parse AI Decision').item.json.lead_score }} / 100</p><p>Please take over this conversation directly.</p>",
+        "operation": "send",
+        "options": {},
+        "resource": "message",
+        "sendTo": "harmainrizwanr@gmail.com",
+        "subject": "=🚨 URGENT: Human Escalation Required — {{ $('Parse AI Decision').item.json.name }}"
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "0621790e-ee16-4957-ad5d-e82878e260e0"
+    },
+    {
+      "id": "is-hot-lead-01",
+      "name": "Is Hot Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "combinator": "and",
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-hot-01",
+              "leftValue": "={{ $json.lead_score }}",
+              "operator": {
+                "operation": "gte",
+                "type": "number"
+              },
+              "rightValue": 80
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "gmail-hot-lead-01",
+      "name": "Send Hot Lead Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        850,
+        200
+      ],
+      "parameters": {
+        "message": "={{ $('Parse AI Decision').item.json.personalized_reply }}",
+        "operation": "send",
+        "options": {},
+        "resource": "message",
+        "sendTo": "={{ $('Parse AI Decision').item.json.email }}",
+        "subject": "={{ $('Parse AI Decision').item.json.reply_subject }}"
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "ecb5f3ae-a29a-49a0-9d05-b91065fc7e76"
+    },
+    {
+      "id": "discord-hot-lead-01",
+      "name": "Send Hot Lead Discord Alert",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        100
+      ],
+      "parameters": {
+        "authentication": "webhook",
+        "content": "={{ $('Parse AI Decision').item.json.discordAlert }}",
+        "embeds": {
+          "values": []
+        },
+        "files": {
+          "values": []
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "b11600ad-6f40-4e54-82df-b719c8d2665a"
+    },
+    {
+      "id": "is-warm-lead-01",
+      "name": "Is Warm Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        850,
+        420
+      ],
+      "parameters": {
+        "combinator": "and",
+        "conditions": {
+          "conditions": [
+            {
+              "id": "cond-warm-01",
+              "leftValue": "={{ $json.lead_score }}",
+              "operator": {
+                "operation": "gte",
+                "type": "number"
+              },
+              "rightValue": 50
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "gmail-warm-lead-01",
+      "name": "Send Warm Lead Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1100,
+        320
+      ],
+      "parameters": {
+        "message": "={{ $('Parse AI Decision').item.json.personalized_reply }}",
+        "operation": "send",
+        "options": {},
+        "resource": "message",
+        "sendTo": "={{ $('Parse AI Decision').item.json.email }}",
+        "subject": "={{ $('Parse AI Decision').item.json.reply_subject }}"
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "c86f8a5c-c21b-4ab8-80ce-d7e5d9f033d5"
+    },
+    {
+      "id": "gmail-nurture-lead-01",
+      "name": "Send Nurture Lead Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1100,
+        520
+      ],
+      "parameters": {
+        "message": "={{ $('Parse AI Decision').item.json.personalized_reply }}",
+        "operation": "send",
+        "options": {},
+        "resource": "message",
+        "sendTo": "={{ $('Parse AI Decision').item.json.email }}",
+        "subject": "={{ $('Parse AI Decision').item.json.reply_subject }}"
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "748c266c-81f5-4804-ab41-946638486541"
+    },
+    {
+      "id": "format-response-01",
+      "name": "Format Final Webhook Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1350,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const item = $('Parse AI Decision').first().json;\n\nreturn [{\n  json: {\n    success: true,\n    lead_id: item.leadId,\n    lead_score: item.lead_score,\n    qualification: item.qualification,\n    intent: item.intent,\n    property_type: item.property_type,\n    location: item.location,\n    budget: item.budget,\n    timeline: item.timeline,\n    next_action: item.next_action,\n    human_required: item.human_required,\n    reply_subject: item.reply_subject,\n    personalized_reply: item.personalized_reply,\n    processed_at: new Date().toISOString()\n  }\n}];"
+      }
+    },
+    {
+      "id": "respond-200-01",
+      "name": "Respond 200 Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1600,
+        200
+      ],
+      "parameters": {
+        "options": {
+          "responseCode": 200
+        },
+        "respondWith": "allIncomingItems"
+      }
+    }
+  ],
+  "nodeGroups": [],
+  "activeVersion": {
+    "nodes": [
+      {
+        "id": "lead-intake-webhook-01",
+        "name": "Lead Intake Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -1200,
+          200
+        ],
+        "parameters": {
+          "httpMethod": "POST",
+          "options": {},
+          "path": "lead-intake",
+          "responseMode": "responseNode"
+        },
+        "webhookId": "8147bf4b-fefb-4f58-8430-63de3ed76299"
+      },
+      {
+        "id": "validate-normalize-01",
+        "name": "Validate & Normalize Lead",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -950,
+          200
+        ],
+        "parameters": {
+          "jsCode": "const body = $input.all()[0].json.body || $input.all()[0].json;\n\nconst name = String(body.name || '').trim();\nconst email = String(body.email || '').trim().toLowerCase();\nconst phone = String(body.phone || '').trim();\nconst message = String(body.message || '').trim();\nconst source = String(body.source || 'web_form').trim();\n\nconst emailRegex = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nconst hasValidEmail = emailRegex.test(email);\nconst hasMessage = message.length > 0;\n\nif (!hasValidEmail || !hasMessage) {\n  return [{\n    json: {\n      isValid: false,\n      errorMessage: !hasValidEmail ? 'Valid email address is required.' : 'Inquiry message cannot be empty.',\n      rawInput: body\n    }\n  }];\n}\n\nconst leadId = 'lead_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);\nconst receivedAt = new Date().toISOString();\n\nreturn [{\n  json: {\n    isValid: true,\n    leadId: leadId,\n    name: name || 'Prospective Client',\n    email: email,\n    phone: phone || 'Not provided',\n    message: message,\n    source: source,\n    receivedAt: receivedAt\n  }\n}];"
+        }
+      },
+      {
+        "id": "is-valid-lead-01",
+        "name": "Is Valid Lead?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          -700,
+          200
+        ],
+        "parameters": {
+          "combinator": "and",
+          "conditions": {
+            "conditions": [
+              {
+                "id": "valid-check-1",
+                "leftValue": "={{ $json.isValid }}",
+                "operator": {
+                  "operation": "equals",
+                  "type": "boolean"
+                },
+                "rightValue": true
+              }
+            ],
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "respond-400-01",
+        "name": "Respond 400 Bad Request",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          -700,
+          420
+        ],
+        "parameters": {
+          "options": {
+            "responseCode": 400
+          },
+          "respondWith": "json",
+          "responseBody": "={\n  \"success\": false,\n  \"error\": \"{{ $json.errorMessage }}\"\n}"
+        }
+      },
+      {
+        "id": "build-ai-prompt-01",
+        "name": "Build AI Prompt",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -450,
+          200
+        ],
+        "parameters": {
+          "jsCode": "const lead = $input.all()[0].json;\n\nconst systemPrompt = `You are an expert AI Inbound Sales & Lead Qualification Agent for a premier Real Estate and Investment Agency in Dubai.\nYour task is to analyze the customer's inquiry, extract structured fields, assign a deterministic lead score (0-100), identify if immediate human escalation is required, and draft a high-converting, personalized email reply.\n\nSCORING RUBRIC (0-100):\n- 80-100 (HOT): Clear intent to buy/rent/invest, specific budget or location, urgency < 3 months, or asking for meeting/site visit/call.\n- 50-79 (WARM): Interested in properties but flexible budget, exploratory timeline (3-6 months), or asking general guidance questions.\n- 0-49 (NURTURE / LOW): Highly vague, unrealistic budget, spam, irrelevant inquiry, or distant future timeline (> 12 months).\n\nHUMAN ESCALATION (human_required = true):\n- Set true if the message mentions legal issues, contracts, payment/deposit problems, complaints, or explicitly demands to speak to a senior manager or human agent immediately.\n\nOUTPUT FORMAT:\nReturn ONLY a valid JSON object without markdown fences, code blocks, or preamble:\n{\n  \"intent\": \"buy | rent | invest | sell | info | complaint\",\n  \"property_type\": \"apartment | villa | penthouse | townhouse | commercial | any | null\",\n  \"location\": \"string or null\",\n  \"budget\": \"string or null\",\n  \"timeline\": \"string or null\",\n  \"urgency\": \"high | medium | low\",\n  \"lead_score\": 0 to 100,\n  \"qualification\": \"qualified | warm | nurture | needs_review\",\n  \"missing_information\": [\"array of missing fields\"],\n  \"next_action\": \"offer_appointment | ask_qualifying_question | send_nurture | escalate_to_human\",\n  \"human_required\": true or false,\n  \"human_reason\": \"string reason if human_required else null\",\n  \"reply_subject\": \"personalized email subject line\",\n  \"personalized_reply\": \"professional, warm, concise email reply text addressing the lead by name, acknowledging their specific requirement, and inviting next step (call/details)\"\n}`;\n\nconst userPrompt = `Lead Name: ${lead.name}\nLead Email: ${lead.email}\nLead Phone: ${lead.phone}\nSource: ${lead.source}\nInbound Message:\n\"${lead.message}\"`;\n\nreturn [{\n  json: {\n    ...lead,\n    systemPrompt: systemPrompt,\n    userPrompt: userPrompt\n  }\n}];"
+        }
+      },
+      {
+        "id": "openai-qualification-01",
+        "name": "OpenAI: Lead Qualification",
+        "type": "@n8n/n8n-nodes-langchain.openAi",
+        "typeVersion": 1.4,
+        "position": [
+          -200,
+          200
+        ],
+        "parameters": {
+          "messages": {
+            "values": [
+              {
+                "content": "={{ $json.systemPrompt }}",
+                "role": "system"
+              },
+              {
+                "content": "={{ $json.userPrompt }}",
+                "role": "user"
+              }
+            ]
+          },
+          "modelId": {
+            "__rl": true,
+            "cachedResultName": "GPT-4O",
+            "mode": "list",
+            "value": "gpt-4o"
+          },
+          "options": {
+            "maxTokens": 800,
+            "temperature": 0.2
+          }
+        }
+      },
+      {
+        "id": "parse-ai-decision-01",
+        "name": "Parse AI Decision",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          100,
+          200
+        ],
+        "parameters": {
+          "jsCode": "const prev = $('Build AI Prompt').first().json;\nconst aiRaw = $input.all()[0].json.message?.content || $input.all()[0].json.choices?.[0]?.message?.content || '{}';\n\nlet parsed = {};\ntry {\n  const clean = String(aiRaw).replace(/```json\\s*/i, '').replace(/```\\s*/i, '').trim();\n  parsed = JSON.parse(clean);\n} catch (err) {\n  parsed = {\n    intent: 'info',\n    property_type: null,\n    location: null,\n    budget: null,\n    timeline: null,\n    urgency: 'medium',\n    lead_score: 50,\n    qualification: 'warm',\n    missing_information: ['failed to parse AI JSON'],\n    next_action: 'escalate_to_human',\n    human_required: true,\n    human_reason: 'AI output parse error: ' + err.message,\n    reply_subject: 'Thank you for your inquiry, ' + prev.name,\n    personalized_reply: 'Dear ' + prev.name + ',\\n\\nThank you for reaching out to us. A senior property specialist is currently reviewing your inquiry and will follow up with you shortly with curated options.\\n\\nBest regards,\\nAl-Harmain Premier Properties'\n  };\n}\n\nlet score = Number(parsed.lead_score);\nif (isNaN(score)) score = 50;\nif (score > 100) score = 100;\nif (score < 0) score = 0;\n\nlet qual = 'warm';\nif (score >= 80) qual = 'qualified';\nelse if (score >= 50) qual = 'warm';\nelse qual = 'nurture';\n\nconst isHuman = parsed.human_required === true;\nconst hReason = parsed.human_reason || (isHuman ? 'Flagged by AI qualification' : '');\n\nconst discordAlert = isHuman\n  ? `🚨 **HUMAN ESCALATION ALERT**\\n• **Name:** ${prev.name}\\n• **Email:** ${prev.email}\\n• **Phone:** ${prev.phone}\\n• **Reason:** ${hReason}\\n• **Customer Inquiry:** \"${prev.message}\"\\n• **Required Action:** Immediate senior agent / manager takeover.`\n  : `🔥 **NEW QUALIFIED LEAD (Score: ${score}/100)**\\n• **Client:** ${prev.name} (${prev.email})\\n• **Phone:** ${prev.phone}\\n• **Requirement:** ${parsed.property_type || 'Property'} in ${parsed.location || 'Dubai'}\\n• **Budget:** ${parsed.budget || 'Not specified'} · **Timeline:** ${parsed.timeline || 'Flexible'}\\n• **Customer Inquiry:** \"${prev.message}\"\\n• **Next Action:** ${parsed.next_action || 'Offer Appointment'}`;\n\nreturn [{\n  json: {\n    ...prev,\n    ...parsed,\n    lead_score: score,\n    qualification: qual,\n    human_required: isHuman,\n    human_reason: hReason,\n    discordAlert: discordAlert\n  }\n}];"
+        }
+      },
+      {
+        "id": "is-human-escalation-01",
+        "name": "Is Human Escalation?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          350,
+          200
+        ],
+        "parameters": {
+          "combinator": "and",
+          "conditions": {
+            "conditions": [
+              {
+                "id": "cond-human-01",
+                "leftValue": "={{ $json.human_required }}",
+                "operator": {
+                  "operation": "equals",
+                  "type": "boolean"
+                },
+                "rightValue": true
+              }
+            ],
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "discord-escalation-01",
+        "name": "Send Discord Escalation Alert",
+        "type": "n8n-nodes-base.discord",
+        "typeVersion": 2,
+        "position": [
+          600,
+          -50
+        ],
+        "parameters": {
+          "authentication": "webhook",
+          "content": "={{ $('Parse AI Decision').item.json.discordAlert }}",
+          "embeds": {
+            "values": []
+          },
+          "files": {
+            "values": []
+          },
+          "options": {}
+        },
+        "onError": "continueRegularOutput",
+        "webhookId": "54d17052-9bbf-4bdd-bfc9-dc8e6809f32b"
+      },
+      {
+        "id": "gmail-escalation-01",
+        "name": "Send Admin Escalation Email",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.1,
+        "position": [
+          850,
+          -50
+        ],
+        "parameters": {
+          "message": "=<h3>🚨 Urgent Lead Escalation</h3><p><strong>Customer Name:</strong> {{ $('Parse AI Decision').item.json.name }}<br><strong>Email:</strong> {{ $('Parse AI Decision').item.json.email }}<br><strong>Phone:</strong> {{ $('Parse AI Decision').item.json.phone }}</p><p><strong>Escalation Reason:</strong> {{ $('Parse AI Decision').item.json.human_reason }}</p><p><strong>Customer Inquiry:</strong><br><em>{{ $('Parse AI Decision').item.json.message }}</em></p><p><strong>AI Lead Score:</strong> {{ $('Parse AI Decision').item.json.lead_score }} / 100</p><p>Please take over this conversation directly.</p>",
+          "operation": "send",
+          "options": {},
+          "resource": "message",
+          "sendTo": "harmainrizwanr@gmail.com",
+          "subject": "=🚨 URGENT: Human Escalation Required — {{ $('Parse AI Decision').item.json.name }}"
+        },
+        "onError": "continueRegularOutput",
+        "webhookId": "0621790e-ee16-4957-ad5d-e82878e260e0"
+      },
+      {
+        "id": "is-hot-lead-01",
+        "name": "Is Hot Lead?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          600,
+          300
+        ],
+        "parameters": {
+          "combinator": "and",
+          "conditions": {
+            "conditions": [
+              {
+                "id": "cond-hot-01",
+                "leftValue": "={{ $json.lead_score }}",
+                "operator": {
+                  "operation": "gte",
+                  "type": "number"
+                },
+                "rightValue": 80
+              }
+            ],
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "gmail-hot-lead-01",
+        "name": "Send Hot Lead Email",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.1,
+        "position": [
+          850,
+          200
+        ],
+        "parameters": {
+          "message": "={{ $('Parse AI Decision').item.json.personalized_reply }}",
+          "operation": "send",
+          "options": {},
+          "resource": "message",
+          "sendTo": "={{ $('Parse AI Decision').item.json.email }}",
+          "subject": "={{ $('Parse AI Decision').item.json.reply_subject }}"
+        },
+        "onError": "continueRegularOutput",
+        "webhookId": "ecb5f3ae-a29a-49a0-9d05-b91065fc7e76"
+      },
+      {
+        "id": "discord-hot-lead-01",
+        "name": "Send Hot Lead Discord Alert",
+        "type": "n8n-nodes-base.discord",
+        "typeVersion": 2,
+        "position": [
+          1100,
+          100
+        ],
+        "parameters": {
+          "authentication": "webhook",
+          "content": "={{ $('Parse AI Decision').item.json.discordAlert }}",
+          "embeds": {
+            "values": []
+          },
+          "files": {
+            "values": []
+          },
+          "options": {}
+        },
+        "onError": "continueRegularOutput",
+        "webhookId": "b11600ad-6f40-4e54-82df-b719c8d2665a"
+      },
+      {
+        "id": "is-warm-lead-01",
+        "name": "Is Warm Lead?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          850,
+          420
+        ],
+        "parameters": {
+          "combinator": "and",
+          "conditions": {
+            "conditions": [
+              {
+                "id": "cond-warm-01",
+                "leftValue": "={{ $json.lead_score }}",
+                "operator": {
+                  "operation": "gte",
+                  "type": "number"
+                },
+                "rightValue": 50
+              }
+            ],
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "combinator": "and"
+          },
+          "options": {}
+        }
+      },
+      {
+        "id": "gmail-warm-lead-01",
+        "name": "Send Warm Lead Email",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.1,
+        "position": [
+          1100,
+          320
+        ],
+        "parameters": {
+          "message": "={{ $('Parse AI Decision').item.json.personalized_reply }}",
+          "operation": "send",
+          "options": {},
+          "resource": "message",
+          "sendTo": "={{ $('Parse AI Decision').item.json.email }}",
+          "subject": "={{ $('Parse AI Decision').item.json.reply_subject }}"
+        },
+        "onError": "continueRegularOutput",
+        "webhookId": "c86f8a5c-c21b-4ab8-80ce-d7e5d9f033d5"
+      },
+      {
+        "id": "gmail-nurture-lead-01",
+        "name": "Send Nurture Lead Email",
+        "type": "n8n-nodes-base.gmail",
+        "typeVersion": 2.1,
+        "position": [
+          1100,
+          520
+        ],
+        "parameters": {
+          "message": "={{ $('Parse AI Decision').item.json.personalized_reply }}",
+          "operation": "send",
+          "options": {},
+          "resource": "message",
+          "sendTo": "={{ $('Parse AI Decision').item.json.email }}",
+          "subject": "={{ $('Parse AI Decision').item.json.reply_subject }}"
+        },
+        "onError": "continueRegularOutput",
+        "webhookId": "748c266c-81f5-4804-ab41-946638486541"
+      },
+      {
+        "id": "format-response-01",
+        "name": "Format Final Webhook Response",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1350,
+          200
+        ],
+        "parameters": {
+          "jsCode": "const item = $('Parse AI Decision').first().json;\n\nreturn [{\n  json: {\n    success: true,\n    lead_id: item.leadId,\n    lead_score: item.lead_score,\n    qualification: item.qualification,\n    intent: item.intent,\n    property_type: item.property_type,\n    location: item.location,\n    budget: item.budget,\n    timeline: item.timeline,\n    next_action: item.next_action,\n    human_required: item.human_required,\n    reply_subject: item.reply_subject,\n    personalized_reply: item.personalized_reply,\n    processed_at: new Date().toISOString()\n  }\n}];"
+        }
+      },
+      {
+        "id": "respond-200-01",
+        "name": "Respond 200 Success",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          1600,
+          200
+        ],
+        "parameters": {
+          "options": {
+            "responseCode": 200
+          },
+          "respondWith": "allIncomingItems"
+        }
+      }
+    ],
+    "connections": {
+      "Lead Intake Webhook": {
+        "main": [
+          [
+            {
+              "node": "Validate & Normalize Lead",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Validate & Normalize Lead": {
+        "main": [
+          [
+            {
+              "node": "Is Valid Lead?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Valid Lead?": {
+        "main": [
+          [
+            {
+              "node": "Build AI Prompt",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Respond 400 Bad Request",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build AI Prompt": {
+        "main": [
+          [
+            {
+              "node": "OpenAI: Lead Qualification",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "OpenAI: Lead Qualification": {
+        "main": [
+          [
+            {
+              "node": "Parse AI Decision",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parse AI Decision": {
+        "main": [
+          [
+            {
+              "node": "Is Human Escalation?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Human Escalation?": {
+        "main": [
+          [
+            {
+              "node": "Send Discord Escalation Alert",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Is Hot Lead?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Discord Escalation Alert": {
+        "main": [
+          [
+            {
+              "node": "Send Admin Escalation Email",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Admin Escalation Email": {
+        "main": [
+          [
+            {
+              "node": "Format Final Webhook Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Hot Lead?": {
+        "main": [
+          [
+            {
+              "node": "Send Hot Lead Email",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Is Warm Lead?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Hot Lead Email": {
+        "main": [
+          [
+            {
+              "node": "Send Hot Lead Discord Alert",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Hot Lead Discord Alert": {
+        "main": [
+          [
+            {
+              "node": "Format Final Webhook Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Is Warm Lead?": {
+        "main": [
+          [
+            {
+              "node": "Send Warm Lead Email",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Send Nurture Lead Email",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Warm Lead Email": {
+        "main": [
+          [
+            {
+              "node": "Format Final Webhook Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Send Nurture Lead Email": {
+        "main": [
+          [
+            {
+              "node": "Format Final Webhook Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Format Final Webhook Response": {
+        "main": [
+          [
+            {
+              "node": "Respond 200 Success",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "nodeGroups": []
+  },
+  "tags": [],
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "parentFolderId": null,
+  "description": "AI Sales & Lead Qualification Agent: captures inbound leads, qualifies with OpenAI gpt-4o, deterministically scores and routes to Hot, Warm, Nurture or Human Escalation, and alerts team via Gmail & Discord.",
+  "scopes": [
+    "execution:reveal",
+    "workflow:create",
+    "workflow:delete",
+    "workflow:disableRedaction",
+    "workflow:enableRedaction",
+    "workflow:execute",
+    "workflow:execute-chat",
+    "workflow:export",
+    "workflow:import",
+    "workflow:list",
+    "workflow:move",
+    "workflow:publish",
+    "workflow:read",
+    "workflow:share",
+    "workflow:unpublish",
+    "workflow:unshare",
+    "workflow:update"
+  ],
+  "canExecute": true
+}

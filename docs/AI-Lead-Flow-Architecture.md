@@ -5,7 +5,7 @@
 > qualifies, follows up with, and books appointments for inbound leads — while
 > escalating complex conversations to a human.
 
-- **Status:** Planning / architecture (no workflows built yet)
+- **Status:** P0 Foundations **built** (Next.js DB layer + SQLite migrations + API routes). n8n workflows next.
 - **Primary n8n workflow (shell created):** `AI Lead Flow` — `Eh7s0XF0NSJEIECN`
 - **Owner:** Harmain Rizwan
 - **Last updated:** 2026-08-24
@@ -27,7 +27,7 @@ These are the credentials **already configured** in your n8n — the architectur
 
 **Gaps to close before the appointment module:**
 - ⛔ **Google Calendar** credential is **not** configured yet → must be added for Workflow 4 (booking).
-- ℹ️ No **n8n Data Tables** exist yet. Supabase is the recommended store; Data Tables are a valid zero-setup fallback.
+- ℹ️ The store is **SQLite behind the Next.js app** (built in P0). n8n reaches it via HTTP, not directly.
 
 ---
 
@@ -113,14 +113,14 @@ We are **not** rebuilding the enterprise Upwork scope. We are building a **focus
 | F2 | Input validation + normalization + `lead_id` | n8n | ✅ MVP |
 | F3 | AI understanding + structured extraction (intent, budget, location…) | OpenAI | ✅ MVP |
 | F4 | Deterministic lead scoring + qualification routing | n8n (AI-assisted) | ✅ MVP |
-| F5 | Persist lead / conversation / event to Supabase | n8n | ✅ MVP |
+| F5 | Persist lead / conversation / event to SQLite (via Next.js API) | n8n | ✅ MVP |
 | F6 | AI-generated natural first reply (email) | OpenAI + Gmail | ✅ MVP |
 | F7 | Automated timed follow-up sequence (24h / 72h / 7d) | n8n (cron) + OpenAI | ✅ MVP |
 | F8 | Human escalation (detect → stop → notify) | OpenAI + n8n + Gmail/Discord | ✅ MVP |
-| F9 | Lead lifecycle state machine | n8n + Supabase | ✅ MVP |
+| F9 | Lead lifecycle state machine | n8n + SQLite | ✅ MVP |
 | F10 | Error handling: retries, JSON validation, fallback, logging | n8n | ✅ MVP |
 | F11 | Appointment booking via Google Calendar | n8n + OpenAI intent | 🔶 Phase 2 |
-| F12 | Multi-turn memory (don't re-ask known info) | OpenAI + Supabase context | 🔶 Phase 2 |
+| F12 | Multi-turn memory (don't re-ask known info) | OpenAI + SQLite context | 🔶 Phase 2 |
 | F13 | Internal Discord "hot lead" alert | n8n | 🔶 Phase 2 |
 | F14 | Google Sheets CRM mirror (demo view) | n8n | 🟢 Optional |
 | F15 | WhatsApp channel | n8n | 🟢 Future |
@@ -139,7 +139,7 @@ Six workflows. `AI Lead Flow` (`Eh7s0XF0NSJEIECN`) becomes **WF1 Lead Intake** (
 2. **Validate** (Code/IF): required fields present, email format valid → else respond `400` + log.
 3. **Normalize** (Set): trim, lowercase email, default `source = "web_form"`, add `created_at`.
 4. **Generate `lead_id`** (Code): UUID.
-5. **Insert lead** into Supabase `leads` with `status = NEW`.
+5. **Insert lead** via `POST /api/leads` (Next.js → SQLite) with `status = NEW`.
 6. **Log event** `lead_intake / received`.
 7. **Respond** `200 { lead_id, status: "received" }` to the form immediately.
 8. **Call WF2** (Execute Workflow) asynchronously with the lead payload.
@@ -174,7 +174,7 @@ Driven by **WF6 scheduler** (state + timestamps), not long in-workflow waits.
 
 ### WF6 — Follow-up Scheduler  *(cron engine)*
 - **Trigger:** Schedule (e.g. every 30–60 min).
-- Queries Supabase for leads **due** for a follow-up (based on state + timestamps + not-replied + not-paused) → routes each into **WF3**. This is what makes timing deterministic and n8n-owned rather than relying on fragile long `Wait` nodes.
+- Queries the DB via `GET /api/leads?status=…&paused=false&dueBefore=…` for leads **due** for a follow-up (based on state + timestamps + not-replied + not-paused) → routes each into **WF3**. This is what makes timing deterministic and n8n-owned rather than relying on fragile long `Wait` nodes.
 
 > **Note on reply capture (Phase 2+):** to know a lead "replied", add either a reply webhook (form/portal) or a Gmail Trigger that matches the thread and updates `last_reply_at` + `status = CONTACTED→ENGAGED`. For MVP, replies can be simulated via a `POST /webhook/lead-reply` endpoint.
 
@@ -350,7 +350,7 @@ AI Lead Flow/
 
 | Phase | Goal | Deliverables |
 |---|---|---|
-| **P0 — Foundations** | DB + intake skeleton | `schema.sql` in Supabase; WF1 Lead Intake (webhook → validate → store → respond); sample payloads |
+| **P0 — Foundations** ✅ | DB layer built | Next.js app + Drizzle schema (4 tables) + SQLite migrations + DB API routes (`/api/leads`, `/api/conversations`, `/api/events`, `/api/appointments`) + sample payloads. *(WF1 Lead Intake workflow lands in P1.)* |
 | **P1 — AI Core (MVP heart)** | Intelligence + routing | WF2 AI Qualification with structured output + JSON validation + scoring/routing; first AI email reply via Gmail |
 | **P2 — Follow-ups** | Automated re-engagement | WF6 scheduler + WF3 sequence (24h/72h/7d) with idempotency |
 | **P3 — Escalation** | Human-in-the-loop | WF5 escalation (email + Discord); `HUMAN_REQUIRED` + pause logic |
@@ -387,7 +387,8 @@ AI Lead Flow/
 - **Routing tests:** score 91 → HOT, 65 → WARM, 30 → NURTURE, `human_required=true` → escalation regardless of score.
 - **Idempotency test:** re-run follow-up scheduler twice → no duplicate emails.
 - **Failure injection:** bad webhook payload → graceful 400 + log; simulate OpenAI failure → retry then fallback; calendar failure → lead stays safe.
-- **End-to-end smoke:** POST a lead via the form → verify Supabase rows (lead + conversation + events), email sent, correct final state.
+- **End-to-end smoke:** POST a lead via the form → verify SQLite rows (lead + conversation + events), email sent, correct final state.
+- **DB layer (P0, done):** the API routes are already smoke-tested — create/validate(400)/update/list/filter across all 4 tables, incl. an event logged with no lead (Scenario E).
 
 ---
 
@@ -418,7 +419,7 @@ Validation fails → `400 { error: "email required" }` → logged to `workflow_e
 ## 14. How to Demonstrate This in a Portfolio
 
 - **README with the story** (the one-liner from §1) + an **architecture diagram** + a **state-machine diagram**.
-- **A 60–90s GIF/screen recording:** submit a lead on the form → watch n8n light up → show the AI's structured JSON → show the email that went out → show the Supabase row updating → trigger an escalation and show the Discord alert.
+- **A 60–90s GIF/screen recording:** submit a lead on the form → watch n8n light up → show the AI's structured JSON → show the email that went out → show the SQLite row updating → trigger an escalation and show the Discord alert.
 - **Annotated screenshots** of each workflow canvas (clean, labelled nodes).
 - **"Before / After" framing:** manual sales busywork vs. this automated pipeline.
 - **A short technical write-up:** "Why n8n orchestrates and OpenAI only advises" (the architectural principle) — this is what makes you look like a *senior* automation architect, not a workflow copier.
@@ -428,9 +429,9 @@ Validation fails → `400 { error: "email required" }` → logged to `workflow_e
 
 ## Immediate Next Steps (proposed)
 
-1. **P0 kickoff:** finalize `schema.sql` and create the four tables in Supabase.
-2. Build **WF1 Lead Intake** on the existing `AI Lead Flow` workflow (webhook → validate → store → respond).
-3. Draft the **qualification system prompt** in `docs/prompts/`.
-4. Then build **WF2 AI Qualification** and test with the sample payloads.
+1. ✅ **P0 done:** Next.js DB layer built — Drizzle schema (4 tables), SQLite migrations, and the DB API routes (`/api/leads`, `/api/conversations`, `/api/events`, `/api/appointments`), all smoke-tested.
+2. **Expose the API to cloud n8n:** run `npm run dev` in `frontend/` and tunnel it (ngrok / Cloudflare Tunnel) or deploy — cloud n8n can't reach `localhost`.
+3. Build **WF1 Lead Intake** on the existing `AI Lead Flow` workflow (webhook → validate → `POST /api/leads` → respond).
+4. Draft the **qualification system prompt** in `docs/prompts/`, then build **WF2 AI Qualification** (`gpt-5-mini`) and test with the sample payloads.
 
-> When you're ready, say the word and we'll start **P0** — I'll ground everything in the n8n SDK reference and best-practices before writing any workflow code.
+> P1 is next: I'll ground every workflow in the n8n SDK reference + best-practices before writing any workflow code.
