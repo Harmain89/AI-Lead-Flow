@@ -1,14 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 
-interface ConsultationResult {
+interface LeadRecord {
+  id: string;
+  name: string | null;
+  email: string;
+  phone: string | null;
+  source: string;
+  originalMessage: string | null;
+  status: string;
+  leadScore: number | null;
+  createdAt: string;
+}
+
+interface SimulationOutput {
   success: boolean;
   lead_id?: string;
   lead_score?: number;
   qualification?: string;
   intent?: string;
+  property_type?: string;
+  location?: string;
+  budget?: string;
+  timeline?: string;
   next_action?: string;
   human_required?: boolean;
   reply_subject?: string;
@@ -19,68 +35,140 @@ interface ConsultationResult {
 const N8N_WEBHOOK_URL =
   "https://realestateleadmanagement-n8n-b138c4-13-203-193-36.sslip.io/webhook/lead-intake";
 
-export default function ClientPortal() {
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+const WORKFLOW_NODES = [
+  { name: "Lead Intake Webhook", type: "Webhook", icon: "🔗", desc: "Receives raw POST payloads from websites and APIs" },
+  { name: "Validate & Normalize Lead", type: "Code (JS)", icon: "⚡", desc: "Sanitizes fields and validates email RFC syntax" },
+  { name: "Is Valid Lead?", type: "IF Node", icon: "🔀", desc: "Routes valid leads forward or rejects with 400" },
+  { name: "Respond 400 Bad Request", type: "Respond to Webhook", icon: "🛑", desc: "Instant error response on missing data" },
+  { name: "Build AI Prompt", type: "Code (JS)", icon: "📝", desc: "Assembles system prompt with strict scoring rubric" },
+  { name: "OpenAI: Lead Qualification", type: "OpenAI GPT-4o", icon: "🧠", desc: "Extracts intent, budget, timeline, and lead score" },
+  { name: "Parse AI Decision", type: "Code (JS)", icon: "⚙️", desc: "Parses structured JSON and formats alerts" },
+  { name: "Is Human Escalation?", type: "IF Node", icon: "🚨", desc: "Detects disputes, VIPs, or manager meeting requests" },
+  { name: "Send Discord Escalation Alert", type: "Discord", icon: "📢", desc: "Emergency channel broadcast for manager takeover" },
+  { name: "Send Admin Escalation Email", type: "Gmail", icon: "✉️", desc: "Direct email alert dispatched to senior leadership" },
+  { name: "Is Hot Lead?", type: "IF Node", icon: "🔥", desc: "Checks if lead score is 80 or higher" },
+  { name: "Send Hot Lead Email", type: "Gmail", icon: "📨", desc: "Sends immediate personalized response to buyer" },
+  { name: "Send Hot Lead Discord Alert", type: "Discord", icon: "💬", desc: "Instant team notification with buyer specs" },
+  { name: "Is Warm Lead?", type: "IF Node", icon: "🏡", desc: "Checks if lead score is between 50 and 79" },
+  { name: "Send Warm Lead Email", type: "Gmail", icon: "📧", desc: "Sends exploratory guide and qualification follow-up" },
+  { name: "Send Nurture Lead Email", type: "Gmail", icon: "📬", desc: "Enrolls low-intent leads into drip education" },
+  { name: "Format Final Webhook Response", type: "Code (JS)", icon: "✨", desc: "Packages on-screen consultation brief and score" },
+  { name: "Respond 200 Success", type: "Respond to Webhook", icon: "✅", desc: "Returns instant HTTP 200 JSON payload" },
+];
 
-  // Step 1: Contact
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+const PRESETS = [
+  {
+    id: "hot",
+    title: "💎 Hot Lead (Dubai Marina)",
+    badge: "Score: 90+",
+    badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    name: "John Carter",
+    email: "john.carter@example.com",
+    phone: "+971501234567",
+    message:
+      "Hi, I am ready to purchase a 3-bedroom luxury apartment in Dubai Marina or Downtown. My budget is $350,000 and I am prepared to close within the next 4 to 6 weeks. Can your senior consultant arrange a call or viewing?",
+  },
+  {
+    id: "warm",
+    title: "🏡 Warm Lead (Dubai Hills)",
+    badge: "Score: 50–79",
+    badgeColor: "bg-amber-50 text-amber-700 border-amber-200",
+    name: "Sara Ahmed",
+    email: "sara.ahmed@example.com",
+    phone: "+971509876543",
+    message:
+      "Hello, I am exploring options for a townhouse or villa in Dubai Hills Estate for late next year. Flexible budget around $400k, currently researching market trends and payment plans.",
+  },
+  {
+    id: "escalation",
+    title: "🚨 Human Escalation (Dispute)",
+    badge: "VIP / Dispute",
+    badgeColor: "bg-rose-50 text-rose-700 border-rose-200",
+    name: "Patricia Gomez",
+    email: "patricia.gomez@example.com",
+    phone: "+971505557890",
+    message:
+      "URGENT: I previously transferred a deposit for unit 402 and the developer contract has a legal discrepancy. I refuse to speak to an automated bot and demand a senior partner call me immediately.",
+  },
+  {
+    id: "invalid",
+    title: "❌ Validation Error (No Email)",
+    badge: "400 Error",
+    badgeColor: "bg-slate-100 text-slate-700 border-slate-200",
+    name: "Incomplete User",
+    email: "",
+    phone: "+971500000000",
+    message: "Missing email address to test instant validation rejection.",
+  },
+];
 
-  // Step 2: Property Specs
-  const [propertyType, setPropertyType] = useState("Luxury Apartment");
-  const [bedrooms, setBedrooms] = useState("3 Bedrooms");
-  const [preferredLocation, setPreferredLocation] = useState("Dubai Marina");
-  const [budget, setBudget] = useState("$250,000 – $500,000");
+export default function N8nTemplatePage() {
+  // Simulator State
+  const [name, setName] = useState(PRESETS[0].name);
+  const [email, setEmail] = useState(PRESETS[0].email);
+  const [phone, setPhone] = useState(PRESETS[0].phone);
+  const [message, setMessage] = useState(PRESETS[0].message);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simulationResult, setSimulationResult] = useState<SimulationOutput | null>(null);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
 
-  // Step 3: Inquiry & Timeline
-  const [timeline, setTimeline] = useState("Within 1 to 2 Months");
-  const [inquiryNotes, setInquiryNotes] = useState("");
+  // Active step state for scroll animation
+  const [activeStep, setActiveStep] = useState(1);
 
-  // Submission State
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submissionError, setSubmissionError] = useState<string | null>(null);
-  const [consultationResult, setConsultationResult] = useState<ConsultationResult | null>(null);
+  // Canvas zoom/expand modal
+  const [isCanvasExpanded, setIsCanvasExpanded] = useState(false);
 
-  // Validation
-  const isStep1Valid = () => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return fullName.trim().length > 1 && emailRegex.test(email.trim());
-  };
+  // CRM Leads State
+  const [leadsList, setLeadsList] = useState<LeadRecord[]>([]);
+  const [isLoadingLeads, setIsLoadingLeads] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedLead, setSelectedLead] = useState<LeadRecord | null>(null);
 
-  const handleNextFromStep1 = () => {
-    if (!isStep1Valid()) {
-      setSubmissionError("Please provide your full name and a valid email address.");
-      return;
+  const fetchLeads = async () => {
+    setIsLoadingLeads(true);
+    try {
+      const res = await fetch("/api/leads");
+      if (res.ok) {
+        const data = await res.json();
+        setLeadsList(data.leads || []);
+      }
+    } catch (err) {
+      console.error("Failed to load leads", err);
+    } finally {
+      setIsLoadingLeads(false);
     }
-    setSubmissionError(null);
-    setCurrentStep(2);
   };
 
-  const handleNextFromStep2 = () => {
-    setCurrentStep(3);
+  useEffect(() => {
+    fetchLeads();
+  }, []);
+
+  const handleApplyPreset = (preset: (typeof PRESETS)[0]) => {
+    setName(preset.name);
+    setEmail(preset.email);
+    setPhone(preset.phone);
+    setMessage(preset.message);
+    setSimulationError(null);
+    setSimulationResult(null);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleRunSimulation = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
-    setSubmissionError(null);
-
-    // Combine structured answers into a natural customer inquiry message
-    const combinedMessage = `I am interested in acquiring a ${bedrooms} ${propertyType} in ${preferredLocation}. My target budget is ${budget}, and my intended timeline to finalize is ${timeline}.${
-      inquiryNotes.trim() ? ` Additional details: "${inquiryNotes.trim()}"` : ""
-    }`;
+    setIsSimulating(true);
+    setSimulationError(null);
+    setSimulationResult(null);
 
     const payload = {
-      name: fullName.trim(),
+      name: name.trim(),
       email: email.trim().toLowerCase(),
       phone: phone.trim() || "+971500000000",
-      message: combinedMessage,
-      source: "client_portal",
+      message: message.trim(),
+      source: "n8n_template_simulator",
     };
 
     try {
-      // 1. Save to local SQLite database
+      // 1. Store locally in SQLite
       try {
         await fetch("/api/leads", {
           method: "POST",
@@ -91,7 +179,7 @@ export default function ClientPortal() {
         console.warn("Local DB persist skipped", err);
       }
 
-      // 2. Dispatch to live n8n AI Engine
+      // 2. Dispatch to live n8n webhook
       const res = await fetch(N8N_WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -102,497 +190,912 @@ export default function ClientPortal() {
       const item = Array.isArray(data) ? data[0] : data;
 
       if (!res.ok || item.success === false) {
-        setSubmissionError(item.error || "We could not process your inquiry. Please check your information.");
+        setSimulationError(item.error || "Validation Guard Rejected Payload (400 Bad Request).");
       } else {
-        setConsultationResult({
+        setSimulationResult({
           success: true,
           lead_id: item.lead_id,
           lead_score: item.lead_score,
           qualification: item.qualification,
           intent: item.intent,
+          property_type: item.property_type,
+          location: item.location,
+          budget: item.budget,
+          timeline: item.timeline,
           next_action: item.next_action,
           human_required: item.human_required,
           reply_subject: item.reply_subject,
           personalized_reply: item.personalized_reply,
         });
-        setCurrentStep(4);
       }
+
+      await fetchLeads();
     } catch (err: any) {
-      setSubmissionError("Network communication error. Please check your internet connection or try again.");
+      setSimulationError(err.message || "Failed to connect to workflow.");
     } finally {
-      setIsSubmitting(false);
+      setIsSimulating(false);
     }
   };
 
-  const resetInquiry = () => {
-    setFullName("");
-    setEmail("");
-    setPhone("");
-    setInquiryNotes("");
-    setConsultationResult(null);
-    setCurrentStep(1);
-  };
+  const filteredLeads = useMemo(() => {
+    return leadsList.filter((lead) => {
+      if (statusFilter !== "ALL" && lead.status !== statusFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const nameMatch = lead.name?.toLowerCase().includes(q);
+        const emailMatch = lead.email?.toLowerCase().includes(q);
+        const phoneMatch = lead.phone?.toLowerCase().includes(q);
+        const msgMatch = lead.originalMessage?.toLowerCase().includes(q);
+        if (!nameMatch && !emailMatch && !phoneMatch && !msgMatch) return false;
+      }
+      return true;
+    });
+  }, [leadsList, statusFilter, searchQuery]);
 
   return (
-    <div className="min-h-screen flex flex-col text-slate-100 bg-[#070b14]">
-      {/* Ambient background lighting */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[1100px] h-[500px] bg-gradient-to-b from-amber-500/10 via-amber-600/5 to-transparent rounded-full blur-[140px]" />
-        <div className="absolute top-[30%] right-[-10%] w-[600px] h-[600px] bg-indigo-900/15 rounded-full blur-[180px]" />
-        <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-emerald-950/15 rounded-full blur-[180px]" />
-      </div>
-
-      {/* Luxury Brand Header */}
-      <header className="sticky top-0 z-50 border-b border-white/[0.07] bg-slate-950/80 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-300 via-amber-500 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20 ring-1 ring-amber-200/50">
-              <span className="font-serif font-black text-slate-950 text-xl tracking-wider">H</span>
+    <div className="min-h-screen bg-[#fafafa] text-slate-900 font-sans antialiased">
+      {/* ================= N8N TEMPLATE STYLE HEADER ================= */}
+      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* n8n Style Logo Node */}
+            <div className="w-8 h-8 rounded-lg bg-[#ff6d5a] flex items-center justify-center text-white font-bold text-sm shadow-sm">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="6" cy="6" r="3" />
+                <circle cx="6" cy="18" r="3" />
+                <path d="M20 4L8.12 15.88" />
+                <circle cx="18" cy="9" r="3" />
+                <circle cx="18" cy="15" r="3" />
+              </svg>
             </div>
             <div>
-              <span className="font-serif font-bold text-lg tracking-wide text-white block">
-                AL-HARMAIN
-              </span>
-              <span className="text-[10px] uppercase tracking-[0.25em] text-amber-300 font-semibold block">
-                Premier Properties · Dubai
-              </span>
+              <span className="font-extrabold text-slate-950 text-base tracking-tight">n8n</span>
+              <span className="text-slate-400 mx-2">/</span>
+              <span className="text-xs font-semibold text-slate-600">Workflow Templates</span>
             </div>
           </div>
 
-          <div className="hidden md:flex items-center gap-8 text-xs font-medium text-slate-300">
-            <span className="hover:text-amber-300 transition-colors cursor-pointer">Prime Portfolio</span>
-            <span className="hover:text-amber-300 transition-colors cursor-pointer">Signature Villas</span>
-            <span className="hover:text-amber-300 transition-colors cursor-pointer">Waterfront Penthouses</span>
-            <span className="text-amber-400 font-semibold flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Advisors Online Now</span>
-            </span>
-          </div>
+          <nav className="hidden md:flex items-center gap-6 text-xs font-semibold text-slate-600">
+            <a href="#overview" className="hover:text-[#ff6d5a] transition-colors">Overview</a>
+            <a href="#workflow-canvas" className="hover:text-[#ff6d5a] transition-colors">Workflow Canvas</a>
+            <a href="#how-it-works" className="hover:text-[#ff6d5a] transition-colors">How It Works</a>
+            <a href="#simulator" className="hover:text-[#ff6d5a] transition-colors">Live Simulator</a>
+            <a href="#nodes" className="hover:text-[#ff6d5a] transition-colors">Nodes Used</a>
+            <a href="#crm" className="hover:text-[#ff6d5a] transition-colors">Telemetry CRM</a>
+          </nav>
 
           <div className="flex items-center gap-3">
             <a
-              href="https://wa.me/971500000000"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-4 py-2 rounded-xl text-xs font-semibold bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 transition-all flex items-center gap-2"
+              href="#simulator"
+              className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#ff6d5a] hover:bg-[#e65b49] text-white transition-all shadow-sm flex items-center gap-1.5"
             >
-              <span className="text-emerald-400">●</span>
-              <span>WhatsApp Direct</span>
+              <span>Test Live Simulator</span>
+              <span>↓</span>
             </a>
+            <Link
+              href="/admin"
+              className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 transition-all border border-slate-200"
+            >
+              Staff Portal
+            </Link>
           </div>
         </div>
       </header>
 
-      {/* Hero Introduction */}
-      <section className="relative z-10 pt-10 pb-6 text-center max-w-3xl mx-auto px-4">
-        <span className="inline-block px-3 py-1 rounded-full text-[11px] font-semibold uppercase tracking-[0.2em] bg-amber-500/10 text-amber-300 border border-amber-500/25 mb-4">
-          Bespoke Real Estate Advisory
-        </span>
-        <h1 className="text-3xl sm:text-4xl lg:text-5xl font-serif font-bold tracking-tight text-white">
-          Find Your Next Signature Property in Dubai
-        </h1>
-        <p className="text-slate-400 text-sm mt-3 leading-relaxed max-w-xl mx-auto">
-          Share your desired property specifications with our executive advisory team. Our AI consultation engine immediately analyzes curated private listings and prepares your bespoke options.
-        </p>
-      </section>
-
-      {/* Main Interactive Intake Flow */}
-      <main className="flex-1 max-w-2xl w-full mx-auto px-4 pb-16 relative z-10">
-        {/* Step Progress Pills */}
-        <div className="flex items-center justify-between mb-8 px-2">
-          {[
-            { step: 1, label: "Your Details" },
-            { step: 2, label: "Property Specs" },
-            { step: 3, label: "Timeline & Inquiry" },
-            { step: 4, label: "Advisory Consultation" },
-          ].map((s, idx) => (
-            <div key={s.step} className="flex items-center gap-2">
-              <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                  currentStep === s.step
-                    ? "bg-amber-400 text-slate-950 ring-4 ring-amber-500/20 shadow-lg shadow-amber-500/30"
-                    : currentStep > s.step
-                    ? "bg-emerald-500 text-slate-950 font-black"
-                    : "bg-slate-800 text-slate-500 border border-white/10"
-                }`}
-              >
-                {currentStep > s.step ? "✓" : s.step}
-              </div>
-              <span
-                className={`hidden sm:inline text-xs font-semibold ${
-                  currentStep === s.step
-                    ? "text-amber-300"
-                    : currentStep > s.step
-                    ? "text-slate-300"
-                    : "text-slate-500"
-                }`}
-              >
-                {s.label}
-              </span>
-              {idx < 3 && <div className="hidden sm:block w-8 h-[1px] bg-white/10 mx-1" />}
-            </div>
-          ))}
+      {/* ================= HERO & WORKFLOW TITLE ================= */}
+      <section id="overview" className="pt-10 pb-8 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+        {/* Breadcrumb & Categories */}
+        <div className="flex items-center gap-2 text-xs text-slate-500 mb-3">
+          <Link href="/" className="hover:text-[#ff6d5a]">Workflows</Link>
+          <span>/</span>
+          <span className="text-slate-700 font-medium">Sales & Lead Qualification</span>
+          <span>/</span>
+          <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold text-[10px] border border-blue-200">
+            Production Ready
+          </span>
         </div>
 
-        {/* Form Container */}
-        <div className="glass-panel-glow rounded-3xl p-6 sm:p-10 transition-all duration-300">
-          {/* Error Banner */}
-          {submissionError && (
-            <div className="mb-6 p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5">
-              <span className="text-sm">⚠️</span>
-              <span>{submissionError}</span>
-            </div>
-          )}
+        {/* H1 Title */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div className="max-w-4xl">
+            <h1 className="text-2xl sm:text-4xl font-extrabold text-slate-950 tracking-tight leading-snug">
+              Qualify & Book Inbound Sales Leads with OpenAI GPT-4o, Gmail & Discord
+            </h1>
+            <p className="text-sm text-slate-600 mt-2.5 leading-relaxed">
+              An autonomous sales orchestration workflow that captures inbound inquiries, extracts buyer parameters, deterministically scores leads (0–100), drafts tailored consultation responses, and notifies team members — while seamlessly escalating VIPs and complaints to human managers.
+            </p>
+          </div>
 
-          {/* ================= STEP 1: CONTACT DETAILS ================= */}
-          {currentStep === 1 && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-              <div className="border-b border-white/[0.08] pb-4">
-                <h2 className="text-xl font-serif font-bold text-white">Step 1: Your Contact Information</h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  We will transmit your private consultation proposal directly to your verified contact.
+          {/* Quick Metrics Badges */}
+          <div className="flex sm:flex-col gap-2 shrink-0">
+            <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-sm text-xs">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="font-semibold text-slate-800">Status: Published</span>
+              <span className="text-slate-400">·</span>
+              <span className="font-mono text-slate-600">18 Nodes</span>
+            </div>
+            <div className="flex items-center gap-2 bg-white px-3.5 py-2 rounded-xl border border-slate-200 shadow-sm text-xs">
+              <span className="font-bold text-[#ff6d5a]">⚡ Runtime:</span>
+              <span className="text-slate-700 font-medium">&lt; 5s end-to-end</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ================= INTERACTIVE WORKFLOW CANVAS (REAL N8N SCREENSHOT) ================= */}
+      <section id="workflow-canvas" className="px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto mb-16">
+        <div className="rounded-2xl border border-slate-800 bg-[#121316] shadow-xl overflow-hidden">
+          {/* n8n Canvas Toolbar */}
+          <div className="h-12 bg-[#18191d] border-b border-slate-800 px-4 flex items-center justify-between text-xs text-slate-300">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-400">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span>AI Lead Flow (ID: Eh7s0XF0NSJEIECN)</span>
+              </div>
+              <span className="hidden sm:inline text-slate-600">|</span>
+              <span className="hidden sm:inline text-[11px] bg-emerald-950/80 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                Active Production
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsCanvasExpanded(true)}
+                className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-all text-xs font-semibold flex items-center gap-1.5"
+              >
+                <span>🔍 Zoom Full Canvas</span>
+              </button>
+              <a
+                href="#simulator"
+                className="px-3 py-1 rounded-lg bg-[#ff6d5a] hover:bg-[#e65b49] text-white font-bold text-xs transition-all"
+              >
+                Run Test Execution
+              </a>
+            </div>
+          </div>
+
+          {/* Workflow Canvas Image View */}
+          <div className="relative p-2 sm:p-4 bg-[#121316] flex items-center justify-center min-h-[380px] sm:min-h-[480px]">
+            <img
+              src="/n8n-workflow-canvas.png"
+              alt="n8n AI Lead Flow Workflow Canvas"
+              className="w-full h-auto max-h-[500px] object-contain cursor-zoom-in rounded-lg"
+              onClick={() => setIsCanvasExpanded(true)}
+            />
+          </div>
+
+          {/* Canvas Footer Bar */}
+          <div className="bg-[#18191d] border-t border-slate-800 p-3 px-4 flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-slate-400 gap-2">
+            <div>
+              <strong>Production Pipeline:</strong> Webhook Intake → Validation Guard → OpenAI GPT-4o → Triage IFs → Hot / Warm / Nurture / Escalation Dispatches
+            </div>
+            <div className="font-mono text-slate-500">
+              Trigger: POST /webhook/lead-intake
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Expanded Canvas Modal */}
+      {isCanvasExpanded && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md"
+          onClick={() => setIsCanvasExpanded(false)}
+        >
+          <div className="relative max-w-7xl w-full max-h-[95vh] bg-[#121316] rounded-2xl border border-slate-700 p-4 overflow-auto">
+            <div className="flex items-center justify-between mb-3 text-white">
+              <span className="text-xs font-mono text-slate-400">AI Lead Flow — Full Resolution Workflow Canvas</span>
+              <button
+                onClick={() => setIsCanvasExpanded(false)}
+                className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs"
+              >
+                ✕ Close Preview
+              </button>
+            </div>
+            <img
+              src="/n8n-workflow-canvas.png"
+              alt="Full Canvas"
+              className="w-full h-auto object-contain rounded-lg"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ================= MAIN CONTENT GRID (N8N STYLE LAYOUT) ================= */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* LEFT 8 COLUMNS: EDITORIAL & STEP-BY-STEP FLOW */}
+          <div className="lg:col-span-8 space-y-12">
+            {/* Quick Overview Card */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-4">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#ff6d5a]">
+                <span>⚡ Executive Summary</span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-950">Quick Overview</h2>
+              <div className="text-xs sm:text-sm text-slate-600 leading-relaxed space-y-3">
+                <p>
+                  In high-value sales operations (such as luxury real estate, wealth advisory, and B2B SaaS), <strong>over 60% of inbound leads go cold</strong> simply because human response times average 12 to 24 hours. Prospective buyers inquiring during off-hours or across timezones expect instant, tailored guidance.
+                </p>
+                <p>
+                  This production-ready workflow receives inbound lead inquiries via <strong>Webhook</strong>, validates the payload with strict schema guards, uses <strong>OpenAI GPT-4o</strong> to extract structured parameters (budget, timeline, intent, specific requirements), deterministically scores the lead (0–100), and autonomously dispatches personalized outbound emails via <strong>Gmail</strong> and team alerts to <strong>Discord</strong>.
+                </p>
+                <p>
+                  Crucially, this workflow incorporates a <strong>zero-risk human escalation failsafe</strong>: if a lead mentions legal disputes, deposits, contract complaints, or demands a senior manager, automated replies halt immediately and leadership is paged directly.
+                </p>
+              </div>
+            </div>
+
+            {/* How It Works: Scroll-Animated 4-Step Process */}
+            <div id="how-it-works" className="space-y-6">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-widest text-[#ff6d5a]">
+                  Step-by-Step Architecture
+                </span>
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-950 mt-1">
+                  How It Works
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-600 mt-1">
+                  Click through the steps below or scroll to see how each phase executes autonomously.
                 </p>
               </div>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
-                    Full Name <span className="text-amber-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="e.g. John Carter"
-                    className="w-full px-4 py-3 rounded-xl glass-input text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
-                    Email Address <span className="text-amber-400">*</span>
-                  </label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="e.g. john.carter@example.com"
-                    className="w-full px-4 py-3 rounded-xl glass-input text-sm"
-                  />
-                  <span className="text-[11px] text-slate-500 mt-1 block">
-                    Your tailored property brief and advisory notes will be sent to this email.
-                  </span>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
-                    Phone / WhatsApp Number
-                  </label>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="e.g. +971 50 123 4567"
-                    className="w-full px-4 py-3 rounded-xl glass-input text-sm"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-4 flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleNextFromStep1}
-                  className="py-3 px-7 rounded-xl font-bold text-xs tracking-wider uppercase transition-all shadow-lg bg-gradient-to-r from-amber-400 to-amber-600 text-slate-950 hover:shadow-amber-500/25 flex items-center gap-2 group"
-                >
-                  <span>Continue to Property Preferences</span>
-                  <span className="transition-transform group-hover:translate-x-1">→</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ================= STEP 2: PROPERTY PREFERENCES ================= */}
-          {currentStep === 2 && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-              <div className="border-b border-white/[0.08] pb-4">
-                <h2 className="text-xl font-serif font-bold text-white">Step 2: Property Specifications</h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Specify the type of luxury residence, layout, and preferred neighborhood in Dubai.
-                </p>
-              </div>
-
-              <div className="space-y-5">
-                {/* Property Type Selector */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wider">
-                    Residence Type
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                    {["Luxury Apartment", "Signature Villa", "Sky Penthouse", "Townhouse"].map((type) => (
-                      <button
-                        key={type}
-                        type="button"
-                        onClick={() => setPropertyType(type)}
-                        className={`p-3 rounded-xl text-xs font-semibold border transition-all text-center ${
-                          propertyType === type
-                            ? "bg-amber-400 text-slate-950 border-amber-300 font-bold shadow-md shadow-amber-500/20"
-                            : "bg-slate-900/60 hover:bg-slate-800 text-slate-300 border-white/5"
-                        }`}
-                      >
-                        {type}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Bedrooms Selector */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wider">
-                    Bedrooms
-                  </label>
-                  <div className="grid grid-cols-5 gap-2">
-                    {["1 Bed", "2 Beds", "3 Bedrooms", "4 Beds", "5+ Beds"].map((b) => (
-                      <button
-                        key={b}
-                        type="button"
-                        onClick={() => setBedrooms(b)}
-                        className={`py-2.5 rounded-xl text-xs font-semibold border transition-all text-center ${
-                          bedrooms === b
-                            ? "bg-amber-400 text-slate-950 border-amber-300 font-bold shadow"
-                            : "bg-slate-900/60 hover:bg-slate-800 text-slate-300 border-white/5"
-                        }`}
-                      >
-                        {b}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Preferred Area */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wider">
-                    Target Dubai Neighborhood
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                    {[
-                      "Dubai Marina",
-                      "Downtown Dubai",
-                      "Palm Jumeirah",
-                      "Dubai Hills Estate",
-                      "Business Bay",
-                      "Emirates Hills",
-                    ].map((loc) => (
-                      <button
-                        key={loc}
-                        type="button"
-                        onClick={() => setPreferredLocation(loc)}
-                        className={`p-2.5 rounded-xl text-xs font-medium border transition-all text-center ${
-                          preferredLocation === loc
-                            ? "bg-amber-400 text-slate-950 border-amber-300 font-bold shadow"
-                            : "bg-slate-900/60 hover:bg-slate-800 text-slate-300 border-white/5"
-                        }`}
-                      >
-                        {loc}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Budget Range */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wider">
-                    Anticipated Investment Budget
-                  </label>
-                  <select
-                    value={budget}
-                    onChange={(e) => setBudget(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl glass-input text-sm bg-slate-900"
+              {/* Step Navigation Pills (Inspired by getsyou.ai scroll interaction) */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+                {[
+                  { num: 1, label: "01. Intake & Validation" },
+                  { num: 2, label: "02. AI Qualification & Score" },
+                  { num: 3, label: "03. Omni-Channel Action" },
+                  { num: 4, label: "04. Human Escalation" },
+                ].map((step) => (
+                  <button
+                    key={step.num}
+                    type="button"
+                    onClick={() => setActiveStep(step.num)}
+                    className={`py-2 px-3.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border cursor-pointer ${
+                      activeStep === step.num
+                        ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                        : "bg-white text-slate-600 hover:text-slate-900 border-slate-200"
+                    }`}
                   >
-                    <option value="$150,000 – $250,000">$150,000 – $250,000 (AED 550k – 900k)</option>
-                    <option value="$250,000 – $500,000">$250,000 – $500,000 (AED 900k – 1.8M)</option>
-                    <option value="$500,000 – $1,000,000">$500,000 – $1,000,000 (AED 1.8M – 3.6M)</option>
-                    <option value="$1,000,000 – $3,000,000">$1,000,000 – $3,000,000 (AED 3.6M – 11M)</option>
-                    <option value="Over $3,000,000+">Ultra Luxury / Over $3,000,000+ (AED 11M+)</option>
-                  </select>
-                </div>
+                    {step.label}
+                  </button>
+                ))}
               </div>
 
-              <div className="pt-4 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setCurrentStep(1)}
-                  className="py-2.5 px-5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition-all"
-                >
-                  ← Back
-                </button>
-                <button
-                  type="button"
-                  onClick={handleNextFromStep2}
-                  className="py-3 px-7 rounded-xl font-bold text-xs tracking-wider uppercase transition-all shadow-lg bg-gradient-to-r from-amber-400 to-amber-600 text-slate-950 hover:shadow-amber-500/25 flex items-center gap-2 group"
-                >
-                  <span>Next: Inquiry & Timeline</span>
-                  <span className="transition-transform group-hover:translate-x-1">→</span>
-                </button>
+              {/* Dynamic Step Display Card */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all">
+                {activeStep === 1 && (
+                  <div className="p-6 sm:p-8 space-y-6 animate-in fade-in duration-200">
+                    <div>
+                      <div className="flex items-center justify-between text-xs font-semibold text-slate-400 mb-1">
+                        <span>PHASE 01 OF 04</span>
+                        <span className="font-mono text-emerald-600">Latency: &lt; 50ms</span>
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-950">Inbound Lead Intake & Schema Validation Guard</h3>
+                      <p className="text-xs sm:text-sm text-slate-600 mt-1.5 leading-relaxed">
+                        Inbound inquiries hit the Webhook node <code className="bg-slate-100 text-slate-800 px-1 py-0.5 rounded text-xs font-mono">POST /webhook/lead-intake</code>. The payload is instantly passed to a JavaScript Code node that sanitizes inputs, enforces RFC email syntax validation, and checks message completeness. If the payload fails validation, it routes immediately to <code className="text-rose-600 font-mono text-xs">Respond 400 Bad Request</code>.
+                      </p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center justify-center">
+                      <img
+                        src="/step1.jpg"
+                        alt="Step 1: Lead Intake and Validation"
+                        className="w-full h-auto max-h-[300px] object-contain rounded-lg"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {activeStep === 2 && (
+                  <div className="p-6 sm:p-8 space-y-6 animate-in fade-in duration-200">
+                    <div>
+                      <div className="flex items-center justify-between text-xs font-semibold text-slate-400 mb-1">
+                        <span>PHASE 02 OF 04</span>
+                        <span className="font-mono text-blue-600">Model: OpenAI GPT-4o</span>
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-950">AI Lead Qualification & Deterministic Scoring</h3>
+                      <p className="text-xs sm:text-sm text-slate-600 mt-1.5 leading-relaxed">
+                        The validated lead message is sent to OpenAI GPT-4o. The system prompt instructs the model to extract structured parameters (property type, budget, location, timeframe) and calculate a <strong>0–100 Lead Score</strong> according to a deterministic rubric (Hot: 80–100, Warm: 50–79, Nurture: 0–49). It also crafts a bespoke consultation email reply.
+                      </p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center justify-center">
+                      <img
+                        src="/step2.jpg"
+                        alt="Step 2: AI Qualification and Scoring"
+                        className="w-full h-auto max-h-[300px] object-contain rounded-lg"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {activeStep === 3 && (
+                  <div className="p-6 sm:p-8 space-y-6 animate-in fade-in duration-200">
+                    <div>
+                      <div className="flex items-center justify-between text-xs font-semibold text-slate-400 mb-1">
+                        <span>PHASE 03 OF 04</span>
+                        <span className="font-mono text-indigo-600">Integrations: Gmail + Discord</span>
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-950">Omni-Channel Action & Instant Reply</h3>
+                      <p className="text-xs sm:text-sm text-slate-600 mt-1.5 leading-relaxed">
+                        n8n executes conditional IF nodes on the calculated score. For Hot Leads (80+), it dispatches the customized consultation email via <strong>Gmail</strong> directly to the buyer, and sends a rich formatted alert to the sales team on <strong>Discord</strong> with phone number, budget, and inquiry notes. Warm and Nurture leads receive appropriate guidance and long-term drip follow-ups.
+                      </p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center justify-center">
+                      <img
+                        src="/step3.jpg"
+                        alt="Step 3: Omni-Channel Action and Reply"
+                        className="w-full h-auto max-h-[300px] object-contain rounded-lg"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {activeStep === 4 && (
+                  <div className="p-6 sm:p-8 space-y-6 animate-in fade-in duration-200">
+                    <div>
+                      <div className="flex items-center justify-between text-xs font-semibold text-slate-400 mb-1">
+                        <span>PHASE 04 OF 04</span>
+                        <span className="font-mono text-rose-600">Safety Guard: 100% Manager Takeover</span>
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-950">Human Escalation & Seamless Handoff</h3>
+                      <p className="text-xs sm:text-sm text-slate-600 mt-1.5 leading-relaxed">
+                        If the lead inquiry mentions contract disputes, deposits, legal issues, or specifically asks to speak with a senior partner, GPT-4o sets <code className="bg-rose-50 text-rose-700 px-1 py-0.5 rounded text-xs font-mono">human_required = true</code>. The workflow immediately halts automated sales emails, fires an emergency priority Discord alert, and sends an urgent escalation email to the broker leadership team.
+                      </p>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center justify-center">
+                      <img
+                        src="/step4.jpg"
+                        alt="Step 4: Human Escalation"
+                        className="w-full h-auto max-h-[300px] object-contain rounded-lg"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-          )}
 
-          {/* ================= STEP 3: TIMELINE & INQUIRY ================= */}
-          {currentStep === 3 && (
-            <form onSubmit={handleSubmit} className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-              <div className="border-b border-white/[0.08] pb-4">
-                <h2 className="text-xl font-serif font-bold text-white">Step 3: Timeline & Specific Queries</h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Tell us your intended timeframe and any special architectural or lifestyle preferences.
-                </p>
+            {/* Interactive Live Lead Simulator Card */}
+            <div id="simulator" className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-widest text-[#ff6d5a]">
+                    Interactive Live Sandbox
+                  </span>
+                  <h2 className="text-xl sm:text-2xl font-bold text-slate-950 mt-0.5">
+                    Test the Live Pipeline
+                  </h2>
+                </div>
+                <span className="text-[11px] font-mono text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                  Live Webhook Connected
+                </span>
               </div>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-2 uppercase tracking-wider">
-                    When are you looking to purchase / move?
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {["Immediate (< 1 mo)", "Within 1 to 2 Months", "3 to 6 Months", "Flexible / Exploring"].map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setTimeline(t)}
-                        className={`p-2.5 rounded-xl text-xs font-medium border transition-all text-center ${
-                          timeline === t
-                            ? "bg-amber-400 text-slate-950 border-amber-300 font-bold shadow"
-                            : "bg-slate-900/60 hover:bg-slate-800 text-slate-300 border-white/5"
-                        }`}
-                      >
-                        {t}
-                      </button>
-                    ))}
+              {/* Presets */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                {PRESETS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleApplyPreset(p)}
+                    className="p-3 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 hover:border-slate-300 text-left transition-all group cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold text-slate-900 group-hover:text-[#ff6d5a] transition-colors">
+                        {p.title}
+                      </span>
+                      <span className={`text-[9px] font-bold px-1 py-0.2 rounded border ${p.badgeColor}`}>
+                        {p.badge}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 line-clamp-1">{p.message}</p>
+                  </button>
+                ))}
+              </div>
+
+              {/* Error Message */}
+              {simulationError && (
+                <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+                  <span>⚠️</span>
+                  <span>{simulationError}</span>
+                </div>
+              )}
+
+              {/* Form */}
+              <form onSubmit={handleRunSimulation} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                      Lead Name
+                    </label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="e.g. John Carter"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:bg-white focus:outline-none focus:border-[#ff6d5a] transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                      Email Address <span className="text-[#ff6d5a]">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="e.g. john@example.com"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:bg-white focus:outline-none focus:border-[#ff6d5a] transition-all"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                      Phone Number
+                    </label>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="e.g. +971 50 123 4567"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:bg-white focus:outline-none focus:border-[#ff6d5a] transition-all"
+                    />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
-                    Additional Notes / Specific Questions
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                    Inbound Customer Message <span className="text-[#ff6d5a]">*</span>
                   </label>
                   <textarea
-                    rows={4}
-                    value={inquiryNotes}
-                    onChange={(e) => setInquiryNotes(e.target.value)}
-                    placeholder="e.g. High-floor sea view preferred, interested in private financing or post-handover payment plan. Can we schedule an advisory call?"
-                    className="w-full px-4 py-3 rounded-xl glass-input text-sm resize-none"
+                    rows={3}
+                    required
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Enter customer message..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:bg-white focus:outline-none focus:border-[#ff6d5a] transition-all leading-relaxed"
                   />
                 </div>
-              </div>
 
-              {/* Inquiry Summary Preview */}
-              <div className="p-4 rounded-xl bg-slate-900/80 border border-white/5 text-xs text-slate-300 space-y-1">
-                <div className="flex items-center justify-between text-slate-400 font-semibold text-[10px] uppercase">
-                  <span>Inquiry Summary</span>
-                  <span>Al-Harmain Advisory</span>
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[11px] text-slate-500">
+                    Target: <code className="text-slate-800 font-mono">POST /webhook/lead-intake</code>
+                  </span>
+                  <button
+                    type="submit"
+                    disabled={isSimulating}
+                    className="py-2.5 px-6 rounded-xl font-bold text-xs uppercase tracking-wider bg-[#ff6d5a] hover:bg-[#e65b49] text-white shadow-md shadow-[#ff6d5a]/20 disabled:opacity-50 transition-all flex items-center gap-2 cursor-pointer"
+                  >
+                    {isSimulating ? (
+                      <>
+                        <svg className="animate-spin h-3.5 w-3.5 text-white" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <span>Executing Live Workflow...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Execute Workflow</span>
+                        <span>→</span>
+                      </>
+                    )}
+                  </button>
                 </div>
-                <p>
-                  <strong>{fullName}</strong> ({email}) looking for <strong>{bedrooms} {propertyType}</strong> in <strong>{preferredLocation}</strong> within budget <strong>{budget}</strong>.
-                </p>
-              </div>
+              </form>
 
-              <div className="pt-4 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setCurrentStep(2)}
-                  disabled={isSubmitting}
-                  className="py-2.5 px-5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition-all"
-                >
-                  ← Back
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="py-3.5 px-8 rounded-xl font-bold text-xs tracking-wider uppercase transition-all shadow-xl bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 text-slate-950 hover:shadow-amber-500/25 disabled:opacity-50 flex items-center gap-2"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4 text-slate-950" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      <span>Analyzing & Submitting...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Submit Property Request</span>
-                      <span>✓</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* ================= STEP 4: ADVISORY CONFIRMATION SCREEN ================= */}
-          {currentStep === 4 && consultationResult && (
-            <div className="space-y-6 animate-in fade-in zoom-in-95 duration-400">
-              <div className="text-center space-y-2 border-b border-white/[0.08] pb-6">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-emerald-300 text-slate-950 flex items-center justify-center mx-auto text-2xl font-black shadow-lg shadow-emerald-500/30">
-                  ✓
-                </div>
-                <h2 className="text-2xl font-serif font-bold text-white">Inquiry Successfully Received</h2>
-                <p className="text-xs text-slate-400 max-w-md mx-auto">
-                  Thank you, <strong className="text-amber-300">{fullName}</strong>. Your property consultation request has been analyzed and logged under Ref:{" "}
-                  <code className="text-slate-300 font-mono text-[11px]">{consultationResult.lead_id?.substring(0, 18)}</code>.
-                </p>
-              </div>
-
-              {/* Instant AI Consultation Brief */}
-              <div className="p-6 rounded-2xl bg-slate-900/90 border border-amber-500/25 space-y-4">
-                <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-amber-400" />
-                    <span className="text-xs font-serif font-bold text-amber-300">
-                      Immediate Advisory Brief
+              {/* Simulation Result */}
+              {simulationResult && (
+                <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-3.5 animate-in fade-in duration-300">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs text-slate-900">
+                      Live AI Execution Output
+                    </span>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        (simulationResult.lead_score ?? 0) >= 80
+                          ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                          : (simulationResult.lead_score ?? 0) >= 50
+                          ? "bg-amber-100 text-amber-800 border border-amber-300"
+                          : "bg-blue-100 text-blue-800 border border-blue-300"
+                      }`}
+                    >
+                      Score: {simulationResult.lead_score}/100 · {simulationResult.qualification}
                     </span>
                   </div>
-                  <span className="text-[10px] text-slate-400 uppercase tracking-wider">
-                    {consultationResult.reply_subject || "Bespoke Portfolio Review"}
-                  </span>
-                </div>
 
-                <div className="text-xs text-slate-200 leading-relaxed space-y-3 whitespace-pre-line font-sans">
-                  {consultationResult.personalized_reply ||
-                    "Thank you for contacting Al-Harmain Premier Properties. A dedicated senior advisor has received your parameters and will connect with you to review floorplans and arrange private viewings."}
-                </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                    <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Intent</span>
+                      <strong className="text-slate-900 capitalize">{simulationResult.intent || "—"}</strong>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Location</span>
+                      <strong className="text-slate-900">{simulationResult.location || "—"}</strong>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Budget</span>
+                      <strong className="text-slate-900">{simulationResult.budget || "—"}</strong>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-white border border-slate-200">
+                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Escalation</span>
+                      <strong className={simulationResult.human_required ? "text-rose-600" : "text-emerald-600"}>
+                        {simulationResult.human_required ? "🚨 Human Escalation" : "✓ Autonomous"}
+                      </strong>
+                    </div>
+                  </div>
 
-                <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-400">
-                  <span>Dispatched to: <strong className="text-slate-200">{email}</strong></span>
-                  <span className="text-emerald-400 font-medium">✓ Priority Status Assigned</span>
+                  {/* Generated Email Reply */}
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-bold text-slate-700">Outbound Email Reply Generated by GPT-4o:</span>
+                    <div className="text-xs text-slate-800 leading-relaxed bg-white p-3.5 rounded-lg border border-slate-200 whitespace-pre-wrap font-sans">
+                      {simulationResult.personalized_reply}
+                    </div>
+                  </div>
                 </div>
+              )}
+            </div>
+
+            {/* Nodes Used Section (n8n Template standard) */}
+            <div id="nodes" className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-widest text-[#ff6d5a]">
+                  Components Breakdown
+                </span>
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-950 mt-0.5">
+                  Nodes Used in This Workflow ({WORKFLOW_NODES.length})
+                </h2>
+                <p className="text-xs text-slate-600 mt-1">
+                  Every node has been tested and configured for maximum resilience, error fallback, and zero downtime.
+                </p>
               </div>
 
-              <div className="flex justify-center pt-2">
-                <button
-                  type="button"
-                  onClick={resetInquiry}
-                  className="py-2.5 px-6 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/15 text-white border border-white/10 transition-all"
-                >
-                  Submit Another Property Inquiry
-                </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {WORKFLOW_NODES.map((node, i) => (
+                  <div key={i} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-sm shadow-2xs shrink-0">
+                      {node.icon}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-900">{node.name}</span>
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-200/70 text-slate-700 font-mono">
+                          {node.type}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{node.desc}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
-          )}
+          </div>
+
+          {/* RIGHT 4 COLUMNS: WORKFLOW SIDEBAR (N8N STYLE) */}
+          <div className="lg:col-span-4 space-y-6">
+            {/* Meta Card */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+              <h3 className="text-sm font-bold text-slate-950 uppercase tracking-wider border-b border-slate-100 pb-3">
+                Workflow Details
+              </h3>
+
+              <div className="space-y-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Workflow ID</span>
+                  <code className="text-slate-800 font-mono text-[11px] bg-slate-100 px-1.5 py-0.5 rounded">
+                    Eh7s0XF0NSJEIECN
+                  </code>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Node Count</span>
+                  <span className="font-bold text-slate-900">18 Nodes</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Author / Owner</span>
+                  <span className="font-semibold text-slate-800">Harmain Rizwan</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Trigger Type</span>
+                  <span className="font-mono text-slate-700">Webhook (POST)</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">AI Model</span>
+                  <span className="font-semibold text-blue-600">OpenAI GPT-4o</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Target Database</span>
+                  <span className="font-mono text-slate-700">SQLite + Drizzle ORM</span>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <a
+                  href="#simulator"
+                  className="w-full py-2 px-4 rounded-xl font-bold text-xs bg-[#ff6d5a] hover:bg-[#e65b49] text-white text-center block transition-all shadow-sm"
+                >
+                  Test Inbound Webhook ↓
+                </a>
+                <Link
+                  href="/admin"
+                  className="w-full py-2 px-4 rounded-xl font-semibold text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 text-center block transition-all border border-slate-200"
+                >
+                  Open Sales CRM Telemetry →
+                </Link>
+              </div>
+            </div>
+
+            {/* Integrations Required Card */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-3 text-xs">
+              <h3 className="text-sm font-bold text-slate-950 uppercase tracking-wider border-b border-slate-100 pb-3">
+                Integrations Configured
+              </h3>
+
+              <div className="space-y-2.5">
+                <div className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-base">🧠</span>
+                  <div>
+                    <span className="font-bold text-slate-900 block">OpenAI API</span>
+                    <span className="text-[10px] text-slate-500">Account connected · gpt-4o</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-base">✉️</span>
+                  <div>
+                    <span className="font-bold text-slate-900 block">Gmail OAuth2</span>
+                    <span className="text-[10px] text-slate-500">Connected · Client & Admin alerts</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-base">📢</span>
+                  <div>
+                    <span className="font-bold text-slate-900 block">Discord Webhook</span>
+                    <span className="text-[10px] text-slate-500">Connected · Hot & Escalation feeds</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-base">💾</span>
+                  <div>
+                    <span className="font-bold text-slate-900 block">SQLite Database</span>
+                    <span className="text-[10px] text-slate-500">Next.js API (/api/leads)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ================= BOTTOM SECTION: LIVE DATABASE TELEMETRY ================= */}
+        <div id="crm" className="mt-16 bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-widest text-[#ff6d5a]">
+                Database Records
+              </span>
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-950 mt-0.5">
+                Live SQLite Telemetry ({filteredLeads.length} Records)
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Records stored in <code className="text-blue-700 font-mono">data.sqlite</code> via Drizzle ORM
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search leads..."
+                className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:bg-white focus:outline-none focus:border-[#ff6d5a] transition-all w-52"
+              />
+              <button
+                onClick={fetchLeads}
+                disabled={isLoadingLeads}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all border border-slate-200 flex items-center gap-1.5"
+              >
+                <span>🔄 Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Status Filter */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {["ALL", "NEW", "QUALIFIED", "WARM", "NURTURE", "HUMAN_REQUIRED"].map((st) => (
+              <button
+                key={st}
+                onClick={() => setStatusFilter(st)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                  statusFilter === st
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                {st}
+              </button>
+            ))}
+          </div>
+
+          {/* Leads Table */}
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200 text-[10px]">
+                  <tr>
+                    <th className="px-4 py-3">Lead Name / Email</th>
+                    <th className="px-3 py-3">Phone</th>
+                    <th className="px-3 py-3">Status</th>
+                    <th className="px-3 py-3">AI Score</th>
+                    <th className="px-3 py-3">Inquiry Snippet</th>
+                    <th className="px-3 py-3">Received At</th>
+                    <th className="px-3 py-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {isLoadingLeads ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-6 text-center text-slate-400">Loading SQLite records...</td>
+                    </tr>
+                  ) : filteredLeads.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-8 text-center text-slate-400">No leads found.</td>
+                    </tr>
+                  ) : (
+                    filteredLeads.map((lead) => (
+                      <tr
+                        key={lead.id}
+                        className="hover:bg-slate-50 transition-colors cursor-pointer"
+                        onClick={() => setSelectedLead(lead)}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="font-bold text-slate-900">{lead.name || "Anonymous"}</div>
+                          <div className="text-[11px] text-slate-500 font-mono">{lead.email}</div>
+                        </td>
+                        <td className="px-3 py-3 font-mono text-[11px] text-slate-600">{lead.phone || "—"}</td>
+                        <td className="px-3 py-3">
+                          <span
+                            className={`px-2 py-0.5 rounded-full font-bold text-[9px] uppercase border ${
+                              lead.status === "QUALIFIED"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : lead.status === "HUMAN_REQUIRED"
+                                ? "bg-rose-50 text-rose-700 border-rose-200"
+                                : lead.status === "WARM"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-blue-50 text-blue-700 border-blue-200"
+                            }`}
+                          >
+                            {lead.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 font-bold">
+                          {lead.leadScore !== null ? (
+                            <span className={lead.leadScore >= 80 ? "text-emerald-600" : lead.leadScore >= 50 ? "text-amber-600" : "text-slate-500"}>
+                              {lead.leadScore}/100
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-slate-600 max-w-xs truncate">{lead.originalMessage || "—"}</td>
+                        <td className="px-3 py-3 text-slate-500 text-[11px] whitespace-nowrap">
+                          {new Date(lead.createdAt).toLocaleString([], {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedLead(lead);
+                            }}
+                            className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-all"
+                          >
+                            Inspect
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </main>
 
-      {/* Footer with Discreet Staff Portal Link */}
-      <footer className="border-t border-white/[0.07] bg-slate-950/80 py-6 text-xs text-slate-500 relative z-10">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div>
-            <span className="font-serif font-semibold text-slate-300">Al-Harmain Premier Properties</span> · Exclusive Dubai Real Estate
+      {/* Lead Detail Modal */}
+      {selectedLead && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200"
+          onClick={() => setSelectedLead(null)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 max-w-lg w-full space-y-4 text-xs shadow-xl border border-slate-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Lead Record Details</h3>
+                <p className="text-slate-400 font-mono text-[10px]">{selectedLead.id}</p>
+              </div>
+              <button
+                onClick={() => setSelectedLead(null)}
+                className="text-slate-400 hover:text-slate-700 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-slate-700">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Name</span>
+                  <span className="font-bold text-slate-900 text-sm">{selectedLead.name || "N/A"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Email</span>
+                  <span className="font-semibold text-slate-900">{selectedLead.email}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Phone</span>
+                  <span>{selectedLead.phone || "N/A"}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Status</span>
+                  <span className="font-bold text-blue-600">{selectedLead.status}</span>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Inbound Message</span>
+                <p className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 mt-1 leading-relaxed whitespace-pre-wrap">
+                  {selectedLead.originalMessage || "No message recorded."}
+                </p>
+              </div>
+
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold">Created At</span>
+                <span className="font-mono text-slate-500">{new Date(selectedLead.createdAt).toISOString()}</span>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => setSelectedLead(null)}
+                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-all"
+              >
+                Close
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-4">
-            <Link
-              href="/admin"
-              className="text-[11px] text-slate-500 hover:text-amber-400 transition-colors flex items-center gap-1"
-            >
-              <span>🔒 Staff Operations & CRM Portal</span>
+        </div>
+      )}
+
+      {/* Footer */}
+      <footer className="border-t border-slate-200 bg-white py-8 text-xs text-slate-500">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-800">AI Lead Flow</span>
+            <span>·</span>
+            <span>n8n Workflow Template & Live Autonomous Pipeline</span>
+          </div>
+
+          <div className="flex items-center gap-6">
+            <a href="#overview" className="hover:text-[#ff6d5a] transition-colors">Overview</a>
+            <a href="#how-it-works" className="hover:text-[#ff6d5a] transition-colors">How It Works</a>
+            <a href="#simulator" className="hover:text-[#ff6d5a] transition-colors">Live Simulator</a>
+            <Link href="/admin" className="hover:text-[#ff6d5a] transition-colors font-semibold">
+              Admin CRM
             </Link>
           </div>
         </div>
